@@ -74,7 +74,16 @@ jobs:
 
       - name: Stitch frames into video
         run: |
-          node ci/stitch-video.js
+          node ci/stitch-video.js 2>&1 | tee stitch-output.log
+
+      - name: Upload stitch logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stitch-output
+          path: stitch-output.log
+          retention-days: 7
+          if-no-files-found: warn
 
       - name: Verify video output
         run: |
