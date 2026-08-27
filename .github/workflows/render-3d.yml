@@ -29,8 +29,8 @@ jobs:
 
       - name: Install system dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg libnss3 libatk-bridge2.0-0 libgtk-3-0 libgbm1 libasound2
+          sudo apt-get update -y
+          sudo apt-get install -y ffmpeg libnss3 libatk-bridge2.0-0 libgtk-3-0 libgbm1 libasound2 xvfb 2>&1 || (sleep 10 && sudo apt-get update -y && sudo apt-get install -y ffmpeg libnss3 libatk-bridge2.0-0 libgtk-3-0 libgbm1 libasound2 xvfb)
 
       - name: Install Node dependencies
         run: |
@@ -38,7 +38,7 @@ jobs:
 
       - name: Install Puppeteer Chromium
         run: |
-          npx puppeteer browsers install chrome
+          npx puppeteer browsers install chrome 2>&1 || npx puppeteer browsers install chrome --retry 3
 
       - name: Render 3D flythrough frames
         run: |
