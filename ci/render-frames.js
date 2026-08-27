@@ -104,10 +104,6 @@ async function renderFrames() {
 
   console.log('Starting animation...');
   await browserPage.evaluate((frames) => {
-    window.animationState.totalFrames = frames;
-    window.animationState.frame = 0;
-    window.animationState.locationIndex = 0;
-    window.animationState.dayIndex = 0;
     window.startAnimation(frames);
   }, TOTAL_FRAMES);
 
