@@ -2,7 +2,7 @@ name: Render 3D Weather Flythrough
 
 on:
   push:
-    branches: [main]
+    branches: [main, master]
   workflow_dispatch:
   schedule:
     - cron: '0 6 * * *'
