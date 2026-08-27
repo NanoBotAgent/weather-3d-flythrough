@@ -8,6 +8,7 @@
     "stitch": "node ci/stitch-video.js"
   },
   "dependencies": {
+    "@google/generative-ai": "^0.14.0",
     "puppeteer": "^22.0.0",
     "three": "^0.162.0"
   },

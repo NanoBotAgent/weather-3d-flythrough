@@ -82,6 +82,24 @@ jobs:
         run: |
           node ci/stitch-video.js 2>&1 | tee stitch-output.log
 
+      - name: Verify video with Gemini
+        if: always()
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          set -e
+          npm install @google/generative-ai
+          node ci/verify-video.js 2>&1 | tee gemini-verification.log
+
+      - name: Upload Gemini verification log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gemini-verification
+          path: gemini-verification.log
+          retention-days: 7
+          if-no-files-found: warn
+
       - name: Upload stitch logs
         if: always()
         uses: actions/upload-artifact@v4
