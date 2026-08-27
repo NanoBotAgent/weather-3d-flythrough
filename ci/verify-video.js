@@ -1,6 +1,7 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const fs = require('fs');
 const path = require('path');
+const https = require('https');
 
 const VIDEO_PATH = path.join(__dirname, '..', 'weather_3d_flythrough.mp4');
 const API_KEY = process.env.GEMINI_API_KEY;
@@ -89,22 +90,84 @@ Return ONLY valid JSON in this exact format:
 }
 `;
 
+async function uploadFile(filePath, mimeType, displayName) {
+  const fileSize = fs.statSync(filePath).size;
+  const uploadUrl = `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${API_KEY}`;
+  
+  return new Promise((resolve, reject) => {
+    const boundary = '----WebKitFormBoundary' + Math.random().toString(36).substring(2);
+    const start = `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${displayName}"\r\nContent-Type: ${mimeType}\r\n\r\n`;
+    const end = `\r\n--${boundary}--\r\n`;
+    
+    const fileStream = fs.createReadStream(filePath);
+    
+    const req = https.request(uploadUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': `multipart/related; boundary=${boundary}`,
+        'X-Goog-Upload-Protocol': 'multipart',
+        'X-Goog-Upload-Command': 'start,upload,finalize',
+        'X-Goog-Upload-Header-Content-Length': fileSize.toString(),
+        'X-Goog-Upload-Header-Content-Type': mimeType
+      }
+    }, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(data);
+          if (parsed.file) {
+            resolve(parsed.file);
+          } else {
+            reject(new Error('Upload failed: ' + data));
+          }
+        } catch (e) {
+          reject(new Error('Invalid JSON response: ' + data));
+        }
+      });
+    });
+    
+    req.on('error', reject);
+    
+    req.write(start);
+    fileStream.pipe(req, { end: false });
+    fileStream.on('end', () => {
+      req.end(end);
+    });
+  });
+}
+
+async function getFile(fileName) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/${fileName}?key=${API_KEY}`;
+  
+  return new Promise((resolve, reject) => {
+    https.get(url, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try {
+          resolve(JSON.parse(data));
+        } catch (e) {
+          reject(new Error('Invalid JSON response: ' + data));
+        }
+      });
+    }).on('error', reject);
+  });
+}
+
 async function verifyVideo() {
   console.log('Uploading video to Gemini...');
   
-  const videoFile = await genAI.uploadFile(VIDEO_PATH, {
-    mimeType: 'video/mp4',
-    displayName: 'weather-3d-flythrough.mp4'
-  });
+  const videoFile = await uploadFile(VIDEO_PATH, 'video/mp4', 'weather-3d-flythrough.mp4');
 
-  console.log('Video uploaded:', videoFile.file.name);
+  console.log('Video uploaded:', videoFile.name);
   console.log('Waiting for video processing...');
 
   // Wait for video to be processed
-  let file = await genAI.getFile(videoFile.file.name);
+  let file = await getFile(videoFile.name);
   while (file.state === 'PROCESSING') {
     await new Promise(r => setTimeout(r, 5000));
-    file = await genAI.getFile(videoFile.file.name);
+    file = await getFile(videoFile.name);
     console.log('  State:', file.state);
   }
 
@@ -116,7 +179,7 @@ async function verifyVideo() {
   console.log('Video ready, sending verification prompt...');
 
   const result = await model.generateContent([
-    { fileData: { fileUri: videoFile.file.uri, mimeType: 'video/mp4' } },
+    { fileData: { fileUri: videoFile.uri, mimeType: 'video/mp4' } },
     { text: PROMPT }
   ]);
 
