@@ -96,7 +96,16 @@ async function uploadFile(filePath, mimeType, displayName) {
   
   return new Promise((resolve, reject) => {
     const boundary = '----WebKitFormBoundary' + Math.random().toString(36).substring(2);
-    const start = `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${displayName}"\r\nContent-Type: ${mimeType}\r\n\r\n`;
+    
+    // First part: metadata JSON
+    const metadata = JSON.stringify({
+      file: {
+        display_name: displayName
+      }
+    });
+    
+    const start = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n`;
+    const fileHeader = `--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n`;
     const end = `\r\n--${boundary}--\r\n`;
     
     const fileStream = fs.createReadStream(filePath);
@@ -106,9 +115,7 @@ async function uploadFile(filePath, mimeType, displayName) {
       headers: {
         'Content-Type': `multipart/related; boundary=${boundary}`,
         'X-Goog-Upload-Protocol': 'multipart',
-        'X-Goog-Upload-Command': 'start,upload,finalize',
-        'X-Goog-Upload-Header-Content-Length': fileSize.toString(),
-        'X-Goog-Upload-Header-Content-Type': mimeType
+        'X-Goog-Upload-Command': 'start,upload,finalize'
       }
     }, (res) => {
       let data = '';
@@ -130,6 +137,7 @@ async function uploadFile(filePath, mimeType, displayName) {
     req.on('error', reject);
     
     req.write(start);
+    req.write(fileHeader);
     fileStream.pipe(req, { end: false });
     fileStream.on('end', () => {
       req.end(end);
