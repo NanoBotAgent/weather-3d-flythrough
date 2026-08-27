@@ -44,7 +44,9 @@ jobs:
 
       - name: Render 3D flythrough frames
         run: |
-          node ci/render-frames.js
+          set -e
+          node ci/render-frames.js 2>&1
+        continue-on-error: false
 
       - name: Stitch frames into video
         run: |
