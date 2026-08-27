@@ -69,13 +69,11 @@ async function downloadCesium() {
     console.log('Cesium already downloaded');
     return;
   }
-  console.log(`Downloading CesiumJS ${CESIUM_VERSION} (this is large, ~be patient)...`);
+  console.log(`Downloading CesiumJS ${CESIUM_VERSION}...`);
   fs.mkdirSync(CESIUM_DIR, { recursive: true });
 
   const baseUrl = `https://cesium.com/downloads/cesiumjs/releases/${CESIUM_VERSION}/Build/Cesium`;
 
-  // Cesium's AMD loader needs all its files; simplest is to fetch the whole Build dir listing.
-  // We'll fetch the essential files.
   const files = [
     'Cesium.js',
     'Widgets/widgets.css',
@@ -88,19 +86,23 @@ async function downloadCesium() {
     const dest = path.join(CESIUM_DIR, file);
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     try {
-      const resp = await fetch(url);
+      console.log(`  Fetching ${file}...`);
+      const resp = await fetch(url, { timeout: 60000 });
+      console.log(`  ${file}: HTTP ${resp.status}`);
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const buf = Buffer.from(await resp.arrayBuffer());
       fs.writeFileSync(dest, buf);
-      console.log(`  ${file} (${(buf.length / 1024).toFixed(0)} KB)`);
+      console.log(`  ${file} saved (${(buf.length / 1024).toFixed(0)} KB)`);
     } catch (e) {
       console.error(`  FAILED ${file}: ${e.message}`);
+      throw e;
     }
   }
 
   if (!fs.existsSync(path.join(CESIUM_DIR, 'Cesium.js'))) {
     throw new Error('Could not download Cesium.js - aborting');
   }
+  console.log('Cesium download complete');
 }
 
 async function renderFrames() {

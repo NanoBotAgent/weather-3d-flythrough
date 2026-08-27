@@ -60,7 +60,11 @@ jobs:
       - name: Render 3D flythrough frames
         run: |
           set -e
-          node ci/render-frames.js 2>&1
+          node ci/render-frames.js 2>&1 || {
+            echo '=== RENDER FAILED ==='
+            echo 'Exit code:' $?
+            exit 1
+          }
         continue-on-error: false
 
       - name: Stitch frames into video
