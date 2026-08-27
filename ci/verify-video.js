@@ -92,30 +92,53 @@ Return ONLY valid JSON in this exact format:
 
 async function uploadFile(filePath, mimeType, displayName) {
   const fileSize = fs.statSync(filePath).size;
-  const uploadUrl = `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${API_KEY}`;
+  const startUrl = `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${API_KEY}`;
   
+  // Step 1: Start resumable upload - send metadata only
   return new Promise((resolve, reject) => {
-    const boundary = '----WebKitFormBoundary' + Math.random().toString(36).substring(2);
+    const metadata = JSON.stringify({ file: { display_name: displayName } });
     
-    // First part: metadata JSON
-    const metadata = JSON.stringify({
-      file: {
-        display_name: displayName
+    const req = https.request(startUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Upload-Protocol': 'resumable',
+        'X-Goog-Upload-Command': 'start',
+        'X-Goog-Upload-Header-Content-Length': fileSize.toString(),
+        'X-Goog-Upload-Header-Content-Type': mimeType
       }
+    }, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        const uploadUrl = res.headers['x-goog-upload-url'];
+        if (!uploadUrl) {
+          reject(new Error('No upload URL in response: ' + data));
+          return;
+        }
+        
+        // Step 2: Upload file bytes to the resumable URL
+        uploadFileBytes(uploadUrl, filePath, fileSize, mimeType).then(resolve).catch(reject);
+      });
     });
     
-    const start = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n`;
-    const fileHeader = `--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n`;
-    const end = `\r\n--${boundary}--\r\n`;
-    
+    req.on('error', reject);
+    req.write(metadata);
+    req.end();
+  });
+}
+
+function uploadFileBytes(uploadUrl, filePath, fileSize, mimeType) {
+  return new Promise((resolve, reject) => {
     const fileStream = fs.createReadStream(filePath);
     
     const req = https.request(uploadUrl, {
       method: 'POST',
       headers: {
-        'Content-Type': `multipart/related; boundary=${boundary}`,
-        'X-Goog-Upload-Protocol': 'multipart',
-        'X-Goog-Upload-Command': 'start,upload,finalize'
+        'Content-Length': fileSize.toString(),
+        'X-Goog-Upload-Offset': '0',
+        'X-Goog-Upload-Command': 'upload,finalize',
+        'Content-Type': mimeType
       }
     }, (res) => {
       let data = '';
@@ -135,13 +158,7 @@ async function uploadFile(filePath, mimeType, displayName) {
     });
     
     req.on('error', reject);
-    
-    req.write(start);
-    req.write(fileHeader);
-    fileStream.pipe(req, { end: false });
-    fileStream.on('end', () => {
-      req.end(end);
-    });
+    fileStream.pipe(req);
   });
 }
 
