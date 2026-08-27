@@ -1,0 +1,17 @@
+{
+  "name": "weather-3d-flythrough",
+  "version": "1.0.0",
+  "description": "3D weather flythrough with CesiumJS and three.js rain particles",
+  "main": "ci/render-frames.js",
+  "scripts": {
+    "render": "node ci/render-frames.js",
+    "stitch": "node ci/stitch-video.js"
+  },
+  "dependencies": {
+    "puppeteer": "^22.0.0",
+    "three": "^0.162.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

@@ -1,0 +1,116 @@
+name: Render 3D Weather Flythrough
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * *'
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  render-3d-video:
+    name: Render 3D Weather Video
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg libnss3 libatk-bridge2.0-0 libgtk-3-0 libgbm1 libasound2
+          # Puppeteer bundle
+          npx puppeteer browsers install chrome
+
+      - name: Install Node dependencies
+        run: |
+          npm install
+          # Puppeteer will use the bundled Chromium
+
+      - name: Render 3D flythrough frames
+        run: |
+          node ci/render-frames.js
+
+      - name: Stitch frames into video
+        run: |
+          node ci/stitch-video.js
+
+      - name: Verify video output
+        run: |
+          set -e
+          ls -la weather_3d_flythrough.mp4
+          file weather_3d_flythrough.mp4
+
+          echo "Stream info:"
+          ffprobe -v error -select_streams v:0 \
+            -show_entries stream=codec_name,width,height,nb_frames,duration \
+            -of default=noprint_wrappers=1 weather_3d_flythrough.mp4
+
+          DUR=$(ffprobe -v error -show_entries format=duration -of csv=p=0 weather_3d_flythrough.mp4)
+          WIDTH=$(ffprobe -v error -select_streams v:0 -show_entries stream=width -of csv=p=0 weather_3d_flythrough.mp4)
+          HEIGHT=$(ffprobe -v error -select_streams v:0 -show_entries stream=height -of csv=p=0 weather_3d_flythrough.mp4)
+
+          echo "Verification OK: ${WIDTH}x${HEIGHT}, ${DUR}s"
+
+          echo "duration=$DUR" >> "$GITHUB_ENV"
+          echo "resolution=${WIDTH}x${HEIGHT}" >> "$GITHUB_ENV"
+          echo "size_mb=$(du -m weather_3d_flythrough.mp4 | cut -f1)" >> "$GITHUB_ENV"
+
+      - name: Upload video artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: weather-3d-flythrough
+          path: weather_3d_flythrough.mp4
+          retention-days: 7
+          compression-level: 6
+          if-no-files-found: error
+
+      - name: Collect debug logs
+        if: always()
+        run: |
+          mkdir -p debug-logs
+          find /home/runner/work/_temp -name "*.log" -exec cp {} debug-logs/ \; 2>/dev/null || true
+          env | grep -E '^(GITHUB_|RUNNER_|ACTIONS_)' | sort > debug-logs/github-env.txt || true
+          # Capture the render logs as well
+          if [ -d frames ]; then
+            echo "Frame count: $(ls frames | wc -l)" > debug-logs/render-stats.txt
+            ls -la frames/ | head -5 >> debug-logs/render-stats.txt
+            ls -la frames/ | tail -5 >> debug-logs/render-stats.txt
+          fi
+          ls -la debug-logs/
+
+      - name: Upload debug logs artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workflow-debug-logs
+          path: debug-logs/
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Weather 3D Flythrough Video Generated"
+            echo ""
+            echo "- **Locations**: Grandvoir (Belgium) and Vianden (Luxembourg)"
+            echo "- **Duration**: ~${{ env.duration || 'n/a' }}s (3D flythrough)"
+            echo "- **Resolution**: ${{ env.resolution || '1920x1080' }}"
+            echo "- **Size**: ${{ env.size_mb || '?' }} MB"
+            echo "- **Format**: MP4 (H.264, yuv420p, CRF 20)"
+            echo "- **Artifact**: weather-3d-flythrough (7-day retention)"
+            echo "- **Debug logs**: workflow-debug-logs (7-day retention)"
+          } >> "$GITHUB_STEP_SUMMARY"
