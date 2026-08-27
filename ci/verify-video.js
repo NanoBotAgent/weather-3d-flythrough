@@ -19,41 +19,72 @@ const genAI = new GoogleGenerativeAI(API_KEY);
 const model = genAI.getGenerativeModel({ model: 'gemini-3.7-flash' });
 
 const PROMPT = `
-Analyze this weather flythrough video. Verify it contains all of the following:
+Analyze this weather flythrough video with EXTREME STRICTNESS. This is for a production YouTube channel — quality must be professional. Reject anything that looks amateur, buggy, or incomplete.
 
-1. **3D Cesium globe** with terrain/earth visible (not a flat map)
-2. **Camera orbiting Grandvoir, Belgium** (lat 50.1, lon 5.37) for the first 3 days (Wed 26, Thu 27, Fri 28)
-3. **Flight transition** from Grandvoir to Vianden, Luxembourg (lat 49.9, lon 6.2) — smooth camera flight between locations
-4. **Camera orbiting Vianden, Luxembourg** for the remaining 4 days (Sat 29, Sun 30, Mon 31, Tue 1)
-5. **Rain/storm particle overlays** matching each day's condition:
-   - Wed 26: Partly cloudy (light clouds)
-   - Thu 27: PM thunderstorms (storm particles)
-   - Fri 28: Thunderstorms (heavy storm particles)
-   - Sat 29: Light rain (rain particles)
-   - Sun 30: Showers (rain particles)
-   - Mon 31: Light rain (rain particles)
-   - Tue 1: Partly cloudy (light clouds)
-6. **Day labels** appearing on screen for each day (e.g., "Wed 26", "Thu 27", etc.)
-7. **Location names** shown (Grandvoir, Belgium / Vianden, Luxembourg)
-8. **Temperature ranges** displayed (min/max temps for each day)
-9. **Technical specs**: 1920x1080 resolution, ~45 seconds duration, smooth 30fps playback
+Verify ALL of the following criteria. If ANY criterion fails, set "pass": false.
+
+=== VISUAL QUALITY (must all be true) ===
+1. **3D Cesium globe** — Realistic Earth with terrain elevation, atmosphere glow, and day/night terminator visible. NOT a flat 2D map projection.
+2. **Globe rendering quality** — No visible seams, texture popping, z-fighting, or level-of-detail artifacts. Terrain looks natural at all zoom levels.
+3. **Camera motion** — Buttery smooth orbital paths (no jitter, stutter, sudden speed changes, or easing artifacts). Grandvoir orbit: ~3 days. Vianden orbit: ~4 days.
+4. **Flight transition** — Cinematic camera flight from Grandvoir (50.1, 5.37) to Vianden (49.9, 6.2). Smooth arc with proper banking, ~3-5 seconds. No teleport cuts.
+5. **Particle systems** — Each day's weather has DISTINCT, appropriate particle effects:
+   - Wed 26: Partly cloudy — sparse, wispy cloud particles, subtle
+   - Thu 27: PM thunderstorms — lightning flashes + heavy rain + dark storm clouds
+   - Fri 28: Thunderstorms — intense lightning, heavy downpour, ominous sky
+   - Sat 29: Light rain — steady gentle rain streaks
+   - Sun 30: Showers — intermittent rain bursts
+   - Mon 31: Light rain — steady gentle rain streaks
+   - Tue 1: Partly cloudy — sparse, wispy cloud particles
+   Particles must be 3D (billboards facing camera), not 2D screen overlays.
+6. **Particle synchronization** — Particles change EXACTLY when day label changes. No lag, no overlap between day conditions.
+
+=== UI / TEXT OVERLAYS (must all be true) ===
+7. **Day labels** — Clear, readable text for each of 7 days ("Wed 26" through "Tue 1"). Appears at day transition, stays visible for that day's segment. Professional typography (not default browser font).
+8. **Location names** — "Grandvoir, Belgium" shown during first orbit, "Vianden, Luxembourg" during second. Visible long enough to read.
+9. **Temperature displays** — Min/max temps for EACH day shown numerically (e.g., "17°/25°C"). Units clear. Updates per day.
+10. **Weather condition text** — Condition text matches particles (e.g., "Thunderstorms" when storm particles active).
+11. **UI polish** — No overlapping text, no clipping, consistent positioning, smooth fade in/out transitions. No default HTML/CSS look.
+
+=== TECHNICAL SPECS (must all be true) ===
+12. **Resolution** — Exactly 1920x1080 (not upscaled, not letterboxed).
+13. **Duration** — 42-48 seconds total (7 days × ~6-7s each including transitions).
+14. **Frame rate** — Consistent 30fps throughout. No dropped frames, no variable frame rate.
+15. **Encoding** — H.264, yuv420p, CRF ≤23. No visible compression artifacts (blocking, banding, mosquito noise).
+16. **Aspect ratio** — 16:9 full frame. No pillarboxing/letterboxing.
+
+=== CINEMATIC QUALITY (must all be true) ===
+17. **Lighting** — Dynamic sun position matching time of day. Shadows on terrain. Atmosphere scattering visible.
+18. **Color grading** — Cohesive look. Not washed out, not oversaturated. Night scenes actually dark.
+19. **Camera composition** — Rule of thirds, interesting angles. Not just top-down orbits.
+20. **No bugs/glitches** — Zero: texture flicker, camera clipping through terrain, particles clipping, UI flicker, missing frames, black frames, green flashes.
 
 Return ONLY valid JSON in this exact format:
 {
   "pass": true/false,
-  "issues": ["issue1", "issue2", ...],
+  "issues": ["specific issue 1", "specific issue 2", ...],
   "details": {
-    "globe_visible": true/false,
-    "grandvoir_orbit": true/false,
-    "flight_transition": true/false,
-    "vianden_orbit": true/false,
-    "particles_match": true/false,
-    "day_labels": true/false,
-    "location_names": true/false,
-    "temperatures": true/false,
-    "resolution_ok": true/false,
-    "duration_ok": true/false,
-    "fps_ok": true/false
+    "globe_3d_realistic": true/false,
+    "globe_render_quality": true/false,
+    "camera_motion_smooth": true/false,
+    "flight_transition_cinematic": true/false,
+    "particles_distinct_per_day": true/false,
+    "particles_3d_not_2d": true/false,
+    "particles_sync_with_days": true/false,
+    "day_labels_clear_professional": true/false,
+    "location_names_shown": true/false,
+    "temperatures_per_day": true/false,
+    "condition_text_matches": true/false,
+    "ui_polished_no_artifacts": true/false,
+    "resolution_exact_1920x1080": true/false,
+    "duration_42_48s": true/false,
+    "fps_consistent_30": true/false,
+    "encoding_clean": true/false,
+    "aspect_ratio_16_9": true/false,
+    "lighting_dynamic": true/false,
+    "color_grading_cohesive": true/false,
+    "camera_composition_good": true/false,
+    "zero_bugs_glitches": true/false
   }
 }
 `;
