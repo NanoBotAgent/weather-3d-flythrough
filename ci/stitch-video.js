@@ -22,6 +22,16 @@ function stitchVideo() {
   }
 
   console.log(`Found ${frames.length} frames`);
+  console.log('First few:', frames.slice(0, 5));
+  console.log('Last few:', frames.slice(-5));
+
+  // Check for gaps in sequence
+  const nums = frames.map(f => parseInt(f.match(/frame_(\d+)\.png/)?.[1] || '0', 10));
+  const expected = Array.from({length: frames.length}, (_, i) => i);
+  const missing = expected.filter(n => !nums.includes(n));
+  if (missing.length > 0) {
+    console.log('Missing frame numbers:', missing.slice(0, 10));
+  }
 
   if (fs.existsSync(OUTPUT_FILE)) {
     fs.unlinkSync(OUTPUT_FILE);
