@@ -7,8 +7,13 @@ const OUTPUT_FILE = path.join(__dirname, '../weather_3d_flythrough.mp4');
 const FPS = 30;
 
 function stitchVideo() {
+  console.log('FRAMES_DIR:', FRAMES_DIR);
+  console.log('cwd:', process.cwd());
+  console.log('__dirname:', __dirname);
+  
   if (!fs.existsSync(FRAMES_DIR)) {
     console.error('Frames directory not found:', FRAMES_DIR);
+    console.log('Contents of parent:', fs.readdirSync(path.join(__dirname, '..')));
     process.exit(1);
   }
 
@@ -18,6 +23,7 @@ function stitchVideo() {
 
   if (frames.length === 0) {
     console.error('No frames found');
+    console.log('All files in dir:', fs.readdirSync(FRAMES_DIR));
     process.exit(1);
   }
 
