@@ -37,14 +37,15 @@ function stitchVideo() {
     fs.unlinkSync(OUTPUT_FILE);
   }
 
-  const ffmpegCmd = `ffmpeg -y -framerate ${FPS} -i ${FRAMES_DIR}/frame_%06d.png \
-    -c:v libx264 -preset medium -crf 20 -pix_fmt yuv420p \
-    -movflags +faststart \
-    ${OUTPUT_FILE}`;
+  const ffmpegCmd = `ffmpeg -y -framerate ${FPS} -start_number 0 -i ${FRAMES_DIR}/frame_%06d.png ` +
+    `-c:v libx264 -preset medium -crf 20 -pix_fmt yuv420p ` +
+    `-movflags +faststart ${OUTPUT_FILE}`;
 
+  console.log('FFmpeg command:', ffmpegCmd);
   console.log('Running ffmpeg...');
   try {
-    execSync(ffmpegCmd, { stdio: 'inherit', maxBuffer: 1024 * 1024 * 100 });
+    const result = execSync(ffmpegCmd, { encoding: 'utf8', maxBuffer: 1024 * 1024 * 100 });
+    console.log(result);
     console.log('Video created:', OUTPUT_FILE);
 
     const stats = fs.statSync(OUTPUT_FILE);
