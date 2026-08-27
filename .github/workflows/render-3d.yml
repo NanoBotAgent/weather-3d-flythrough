@@ -85,6 +85,20 @@ jobs:
           retention-days: 7
           if-no-files-found: warn
 
+      - name: Upload logs to paste.rs
+        if: always()
+        run: |
+          set -e
+          cat render-output.log stitch-output.log 2>/dev/null | tail -2000 > combined.log || true
+          if [ -s combined.log ]; then
+            PASTE_URL=$(curl --data-binary @combined.log https://paste.rs/ 2>/dev/null || echo 'paste.rs upload failed')
+            echo "paste_url=$PASTE_URL" >> "$GITHUB_ENV"
+            echo "## Logs uploaded to paste.rs" >> "$GITHUB_STEP_SUMMARY"
+            echo "$PASTE_URL" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No logs to upload"
+          fi
+
       - name: Verify video output
         run: |
           set -e
