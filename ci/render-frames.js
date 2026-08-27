@@ -17,10 +17,8 @@ const TOTAL_FRAMES = INTRO_FRAMES + (LOCATIONS * TOTAL_DAYS * FRAMES_PER_DAY) + 
 const ROOT = path.join(__dirname, '..');
 const SRC = path.join(ROOT, 'src');
 const OUTPUT_DIR = path.join(ROOT, 'frames');
-const CESIUM_DIR = path.join(ROOT, 'public', 'cesium');
-const CESIUM_VERSION = '1.116';
 
-// Simple static file server
+// Simple static file server for src/
 function startServer() {
   const mime = {
     '.html': 'text/html', '.js': 'application/javascript',
@@ -32,14 +30,8 @@ function startServer() {
     let urlPath = decodeURIComponent(req.url.split('?')[0]);
     if (urlPath === '/') urlPath = '/index.html';
 
-    // Serve from public/cesium for /cesium/* and from src for the rest
-    let base = SRC;
-    if (urlPath.startsWith('/cesium/')) {
-      base = path.join(ROOT, 'public');
-    }
-
-    const filePath = path.join(base, urlPath);
-    if (!filePath.startsWith(base)) {
+    const filePath = path.join(SRC, urlPath);
+    if (!filePath.startsWith(SRC)) {
       res.writeHead(403); res.end('Forbidden'); return;
     }
 
@@ -64,49 +56,7 @@ function startServer() {
   });
 }
 
-async function downloadCesium() {
-  if (fs.existsSync(path.join(CESIUM_DIR, 'Cesium.js'))) {
-    console.log('Cesium already downloaded');
-    return;
-  }
-  console.log(`Downloading CesiumJS ${CESIUM_VERSION}...`);
-  fs.mkdirSync(CESIUM_DIR, { recursive: true });
-
-  const baseUrl = `https://cesium.com/downloads/cesiumjs/releases/${CESIUM_VERSION}/Build/Cesium`;
-
-  const files = [
-    'Cesium.js',
-    'Widgets/widgets.css',
-    'Widgets/Images/TerrainProviders/Ellipsoid.png',
-    'Assets/approximateTerrainHeights.json'
-  ];
-
-  for (const file of files) {
-    const url = `${baseUrl}/${file}`;
-    const dest = path.join(CESIUM_DIR, file);
-    fs.mkdirSync(path.dirname(dest), { recursive: true });
-    try {
-      console.log(`  Fetching ${file}...`);
-      const resp = await fetch(url, { timeout: 60000 });
-      console.log(`  ${file}: HTTP ${resp.status}`);
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const buf = Buffer.from(await resp.arrayBuffer());
-      fs.writeFileSync(dest, buf);
-      console.log(`  ${file} saved (${(buf.length / 1024).toFixed(0)} KB)`);
-    } catch (e) {
-      console.error(`  FAILED ${file}: ${e.message}`);
-      throw e;
-    }
-  }
-
-  if (!fs.existsSync(path.join(CESIUM_DIR, 'Cesium.js'))) {
-    throw new Error('Could not download Cesium.js - aborting');
-  }
-  console.log('Cesium download complete');
-}
-
 async function renderFrames() {
-  await downloadCesium();
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 
   const { server, port } = await startServer();
