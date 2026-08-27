@@ -16,7 +16,7 @@ if (!fs.existsSync(VIDEO_PATH)) {
 }
 
 const genAI = new GoogleGenerativeAI(API_KEY);
-const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+const model = genAI.getGenerativeModel({ model: 'gemini-3.7-flash' });
 
 const PROMPT = `
 Analyze this weather flythrough video. Verify it contains all of the following:
