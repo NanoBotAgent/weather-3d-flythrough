@@ -42,6 +42,21 @@ jobs:
           npx puppeteer browsers install chrome 2>&1 || true
           ls -la ~/.cache/puppeteer/ 2>/dev/null || true
 
+      - name: Test Puppeteer launch
+        run: |
+          node -e "
+          const puppeteer = require('puppeteer');
+          (async () => {
+            try {
+              const browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'] });
+              console.log('SUCCESS: Puppeteer launched');
+              await browser.close();
+            } catch (e) {
+              console.error('FAIL:', e.message);
+              process.exit(1);
+            }
+          })();"
+
       - name: Render 3D flythrough frames
         run: |
           set -e
