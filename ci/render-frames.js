@@ -83,6 +83,8 @@ async function renderFrames() {
     if (t === 'error' || t === 'warning') console.log(`[browser:${t}]`, msg.text());
   });
   await browserPage.on('pageerror', err => console.log('[browser:error]', err.message));
+  // Log all failed network requests
+  await browserPage.on('requestfailed', req => console.log('[browser:requestfailed]', req.url(), req.failure().errorText));
 
   await browserPage.exposeFunction('onFrameReady', async (frameNum, buffer) => {
     const framePath = path.join(OUTPUT_DIR, `frame_${String(frameNum).padStart(6, '0')}.png`);
@@ -92,7 +94,7 @@ async function renderFrames() {
 
   console.log('Loading page...');
   await browserPage.goto(url, { waitUntil: 'networkidle0', timeout: 120000 });
-  await browserPage.waitForFunction(() => window.Cesium !== undefined, { timeout: 60000 });
+  await browserPage.waitForFunction(() => window.Cesium !== undefined, { timeout: 120000 });
   await browserPage.waitForFunction(() => window.THREE !== undefined, { timeout: 60000 });
 
   console.log('Initializing Cesium viewer...');

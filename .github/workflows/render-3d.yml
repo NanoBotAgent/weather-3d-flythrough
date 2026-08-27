@@ -59,7 +59,7 @@ jobs:
 
       - name: Render 3D flythrough frames
         run: |
-          set -e
+          set -eo pipefail
           node ci/render-frames.js 2>&1 | tee render-output.log
         continue-on-error: false
 
