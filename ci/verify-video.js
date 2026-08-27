@@ -233,7 +233,18 @@ async function verifyVideo() {
     Object.entries(parsed.details).forEach(([k, v]) => console.log(`  ${k}: ${v}`));
   }
 
-  if (!parsed.pass) {
+  // Also fail if any detail is false (extra safety)
+  let anyDetailFalse = false;
+  if (parsed.details) {
+    for (const [k, v] of Object.entries(parsed.details)) {
+      if (v === false) {
+        console.error(`  ❌ Detail failed: ${k}`);
+        anyDetailFalse = true;
+      }
+    }
+  }
+
+  if (!parsed.pass || anyDetailFalse) {
     console.error('\n❌ VERIFICATION FAILED');
     process.exit(1);
   } else {
