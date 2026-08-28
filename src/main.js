@@ -497,7 +497,12 @@ function initCesium() {
 
   const canvas = document.getElementById('rainOverlay');
   particleSystem = new ParticleSystem3D(canvas, window.innerWidth, window.innerHeight);
+  window.particleSystem = particleSystem;
+  console.log('particleSystem created:', !!particleSystem);
+  
   weatherOverlay = new WeatherOverlay(document.body);
+  window.weatherOverlay = weatherOverlay;
+  console.log('weatherOverlay created:', !!weatherOverlay, 'type:', typeof weatherOverlay);
 
   window.addEventListener('resize', () => {
     particleSystem.resize(window.innerWidth, window.innerHeight);
@@ -641,7 +646,9 @@ function animate() {
 }
 
 window.startAnimation = function(totalFrames) {
-  if (!weatherOverlay || !particleSystem) {
+  console.log('startAnimation called, weatherOverlay:', typeof window.weatherOverlay, 'particleSystem:', typeof window.particleSystem);
+  console.log('weatherOverlay value:', window.weatherOverlay);
+  if (!window.weatherOverlay || !window.particleSystem) {
     throw new Error('startAnimation called before initCesium completed - weatherOverlay/particleSystem not initialized');
   }
   animationState.totalFrames = totalFrames;
@@ -653,8 +660,8 @@ window.startAnimation = function(totalFrames) {
 
   const firstLoc = window.CONFIG.locations[0];
   const firstDay = firstLoc.days[0];
-  weatherOverlay.updateInfo(firstLoc, firstDay);
-  particleSystem.setCondition(firstDay.condition, firstDay.rain / 100);
+  window.weatherOverlay.updateInfo(firstLoc, firstDay);
+  window.particleSystem.setCondition(firstDay.condition, firstDay.rain / 100);
 
   animate();
 };
