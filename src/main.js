@@ -13,7 +13,6 @@ let animationState = {
   flightProgress: 0
 };
 
-// Particle colors per condition
 const PARTICLE_COLORS = {
   rain: new Cesium.Color(0.22, 0.74, 0.97, 0.6),
   storm: new Cesium.Color(0.97, 0.44, 0.44, 0.7),
@@ -41,7 +40,6 @@ function createParticleSystem(viewer, condition, intensity) {
   const size = PARTICLE_SIZES[type] * intensity;
   const count = Math.round(PARTICLE_COUNTS[type] * intensity);
 
-  // Destroy existing
   if (particleSystems.particles) {
     viewer.scene.primitives.remove(particleSystems.particles);
   }
@@ -49,7 +47,6 @@ function createParticleSystem(viewer, condition, intensity) {
     viewer.scene.primitives.remove(particleSystems.clouds);
   }
 
-  // Rain/storm particles - 3D billboards in world space
   const particleSystem = new Cesium.ParticleSystem({
     modelMatrix: Cesium.Matrix4.IDENTITY,
     emitter: new Cesium.BoxEmitter(
@@ -75,7 +72,6 @@ function createParticleSystem(viewer, condition, intensity) {
   viewer.scene.primitives.add(particleSystem);
   particleSystems.particles = particleSystem;
 
-  // Add cloud particles for cloudy conditions
   if (type === 'cloud' || condition.toLowerCase().includes('cloud')) {
     const cloudSystem = new Cesium.ParticleSystem({
       modelMatrix: Cesium.Matrix4.IDENTITY,
@@ -109,9 +105,8 @@ function createRainImage(type) {
   canvas.width = 32;
   canvas.height = 32;
   const ctx = canvas.getContext('2d');
-  
+
   if (type === 'storm') {
-    // Storm: thicker drops with slight glow
     const grad = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
     grad.addColorStop(0, 'rgba(255,255,255,1)');
     grad.addColorStop(0.5, 'rgba(255,200,200,0.8)');
@@ -119,7 +114,6 @@ function createRainImage(type) {
     ctx.fillStyle = grad;
     ctx.fillRect(8, 2, 16, 28);
   } else if (type === 'rain') {
-    // Rain: thin streaks
     const grad = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
     grad.addColorStop(0, 'rgba(255,255,255,1)');
     grad.addColorStop(0.5, 'rgba(100,200,255,0.8)');
@@ -127,7 +121,6 @@ function createRainImage(type) {
     ctx.fillStyle = grad;
     ctx.fillRect(14, 2, 4, 28);
   } else if (type === 'cloud') {
-    // Cloud: soft puff
     const grad = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
     grad.addColorStop(0, 'rgba(255,255,255,0.6)');
     grad.addColorStop(1, 'rgba(200,200,220,0)');
@@ -136,7 +129,6 @@ function createRainImage(type) {
     ctx.arc(16, 16, 16, 0, Math.PI * 2);
     ctx.fill();
   } else {
-    // Clear: tiny sparkles
     ctx.fillStyle = 'rgba(255,255,200,0.5)';
     for (let i = 0; i < 5; i++) {
       ctx.fillRect(Math.random() * 32, Math.random() * 32, 2, 2);
@@ -163,9 +155,8 @@ function createCloudImage() {
 
 function triggerLightning(viewer) {
   if (lightningFlash) {
-    viewer.scene.primitives.remove(lightningFlash);
+    viewer.scene.postProcessStages.remove(lightningFlash);
   }
-  // Brief full-screen white flash via post-process or ambient light spike
   lightningFlash = viewer.scene.postProcessStages.add(new Cesium.PostProcessStage({
     fragmentShader: `
       uniform sampler2D colorTexture;
@@ -179,7 +170,6 @@ function triggerLightning(viewer) {
       flashIntensity: 0.8
     }
   }));
-  // Remove after 2 frames (~66ms)
   setTimeout(() => {
     if (lightningFlash) {
       viewer.scene.postProcessStages.remove(lightningFlash);
@@ -240,46 +230,8 @@ class WeatherOverlay {
 function initCesium() {
   Cesium.Ion.defaultAccessToken = null;
 
-  // Use reliable built-in terrain (WGS84 ellipsoid) - works offline, no API key needed
   const terrainProvider = new Cesium.EllipsoidTerrainProvider();
 
-  // Use a single reliable imagery provider with fallback
-  // CartoDB Dark Matter is generally reliable and free
-  const imageryProvider = new Cesium.UrlTemplateImageryProvider({
-    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png',
-    subdomains: 'abcd',
-    credit: 'Map tiles by Carto, under CC BY 3.0. Data by OpenStreetMap, under ODbL.',
-    minimumLevel: 0,
-    maximumLevel: 18,
-    tileDiscardPolicy: new Cesium.NeverTileDiscardPolicy()
-  });
-
-  viewer = new Cesium.Viewer('cesiumContainer', {
-    imageryProvider: imageryProvider,
-    terrainProvider: terrainProvider,
-    animation: false,
-    timeline: false,
-    infoBox: false,
-    homeButton: false,
-    fullscreenButton: false,
-    selectionIndicator: false,
-    baseLayerPicker: false,
-    geocoder: false,
-    sceneModePicker: false,
-    navigationHelpButton: false,
-    scene3DOnly: true,
-    requestRenderMode: true,
-    maximumRenderTimeChange: Infinity
-  });
-
-function initCesium() {
-  Cesium.Ion.defaultAccessToken = null;
-
-  // Use reliable built-in terrain (WGS84 ellipsoid) - works offline, no API key needed
-  const terrainProvider = new Cesium.EllipsoidTerrainProvider();
-
-  // Use a single reliable imagery provider with fallback
-  // CartoDB Dark Matter is generally reliable and free
   const imageryProvider = new Cesium.UrlTemplateImageryProvider({
     url: 'https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png',
     subdomains: 'abcd',
@@ -322,13 +274,7 @@ function initCesium() {
   viewer.scene.globe.depthTestAgainstTerrain = true;
   viewer.scene.globe.baseColor = new Cesium.Color(0.04, 0.06, 0.1, 1.0);
 
-  const canvas = document.getElementById('rainOverlay');
-  rainSystem = new RainParticleSystem(canvas, window.innerWidth, window.innerHeight);
-  weatherOverlay = new WeatherOverlay(document.body, window.innerWidth, window.innerHeight);
-
-  window.addEventListener('resize', () => {
-    rainSystem.resize(window.innerWidth, window.innerHeight);
-  });
+  weatherOverlay = new WeatherOverlay(document.body);
 
   viewer.camera.setView({
     destination: Cesium.Cartesian3.fromDegrees(5.37, 50.1, 15000),
@@ -338,22 +284,6 @@ function initCesium() {
       roll: 0
     }
   });
-}
-
-function calculateFlightPath() {
-  const locs = window.CONFIG.locations;
-  const path = [];
-
-  for (let i = 0; i < locs.length - 1; i++) {
-    const from = locs[i];
-    const to = locs[i + 1];
-    path.push({
-      from: { lat: from.lat, lon: from.lon, height: 15000 },
-      to: { lat: to.lat, lon: to.lon, height: 15000 },
-      duration: 60
-    });
-  }
-  return path;
 }
 
 function easeInOutCubic(t) {
@@ -409,7 +339,6 @@ function updateCamera(dt) {
     if (state.frame % phaseDuration === 0) {
       weatherOverlay.updateInfo(loc, day);
       createParticleSystem(viewer, day.condition, day.rain / 100);
-      // Trigger lightning for thunderstorms
       if (day.condition.toLowerCase().includes('thunder') || day.condition.toLowerCase().includes('storm')) {
         triggerLightning(viewer);
       }

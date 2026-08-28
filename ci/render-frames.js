@@ -93,14 +93,13 @@ async function renderFrames() {
   });
 
   console.log('Loading page...');
-  await browserPage.goto(url, { waitUntil: 'networkidle0', timeout: 120000 });
-  await browserPage.waitForFunction(() => window.Cesium !== undefined, { timeout: 120000 });
-  await browserPage.waitForFunction(() => window.THREE !== undefined, { timeout: 60000 });
+  await browserPage.goto(url, { waitUntil: 'networkidle0', timeout: 180000 });
+  await browserPage.waitForFunction(() => window.Cesium !== undefined, { timeout: 180000 });
 
   console.log('Initializing Cesium viewer...');
   await browserPage.evaluate(() => window.initCesium());
   // Wait for the globe to start loading tiles
-  await new Promise(r => setTimeout(r, 8000));
+  await new Promise(r => setTimeout(r, 10000));
 
   console.log('Starting animation...');
   await browserPage.evaluate((frames) => {
