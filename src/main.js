@@ -379,12 +379,13 @@ function initCesium() {
 
   const terrainProvider = new Cesium.EllipsoidTerrainProvider();
 
+  // Use reliable free OSM imagery - works well in headless CI
   const imageryProvider = new Cesium.UrlTemplateImageryProvider({
-    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png',
-    subdomains: 'abcd',
-    credit: 'Map tiles by Carto, under CC BY 3.0. Data by OpenStreetMap, under ODbL.',
+    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    subdomains: 'abc',
+    credit: '&copy; OpenStreetMap contributors',
     minimumLevel: 0,
-    maximumLevel: 18,
+    maximumLevel: 19,
     tileDiscardPolicy: new Cesium.NeverTileDiscardPolicy()
   });
 
