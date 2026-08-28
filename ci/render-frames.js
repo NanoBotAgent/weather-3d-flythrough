@@ -93,9 +93,8 @@ async function renderFrames() {
   browserPage.on('requestfailed', req => console.log('[browser:requestfailed]', req.url(), req.failure().errorText));
 
   let frameCount = 0;
-  let resolveFrame;
-  let framePromise = new Promise(r => { resolveFrame = r; });
-  let captureDone = false;
+  let framePromiseResolve;
+  const framePromise = new Promise(r => { framePromiseResolve = r; });
 
   await browserPage.exposeFunction('onFrameReady', async (frameNum, buffer) => {
     const framePath = path.join(OUTPUT_DIR, `frame_${String(frameNum).padStart(6, '0')}.png`);
@@ -103,10 +102,7 @@ async function renderFrames() {
     frameCount++;
     if (frameCount % 30 === 0) console.log(`Captured frame ${frameCount}/${TOTAL_FRAMES}`);
     if (frameCount >= TOTAL_FRAMES) {
-      captureDone = true;
-      resolveFrame();
-    } else {
-      framePromise = new Promise(r => { resolveFrame = r; });
+      framePromiseResolve();
     }
   });
 
@@ -235,8 +231,8 @@ async function renderFrames() {
 
   // Wait for all frames to be captured
   const timeout = setTimeout(() => {
-    console.error('Timeout waiting for frames');
-    resolveFrame();
+    console.error('Timeout waiting for frames - exiting');
+    process.exit(1);
   }, 3600000); // 1 hour timeout
 
   await framePromise;
@@ -245,6 +241,7 @@ async function renderFrames() {
   console.log(`All ${frameCount} frames captured`);
   await browser.close();
   server.close();
+  process.exit(0);
 }
 
 renderFrames().catch(e => { console.error(e); process.exit(1); });
