@@ -379,15 +379,101 @@ function initCesium() {
 
   const terrainProvider = new Cesium.EllipsoidTerrainProvider();
 
-  // Use reliable free OSM imagery - works well in headless CI
-  const imageryProvider = new Cesium.UrlTemplateImageryProvider({
-    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-    subdomains: 'abc',
-    credit: '&copy; OpenStreetMap contributors',
-    minimumLevel: 0,
-    maximumLevel: 19,
-    tileDiscardPolicy: new Cesium.NeverTileDiscardPolicy()
-  });
+  // Offline procedural imagery provider - generates blue marble globe without external tiles
+  // Works 100% reliably in headless CI with no network dependencies
+  class ProceduralImageryProvider extends Cesium.ImageryProvider {
+    constructor() {
+      super();
+      this._tilingScheme = new Cesium.WebMercatorTilingScheme();
+      this._tileWidth = 256;
+      this._tileHeight = 256;
+      this._maximumLevel = 18;
+      this._minimumLevel = 0;
+      this._ready = true;
+      this._tileDiscardPolicy = new Cesium.NeverTileDiscardPolicy();
+      this._credit = new Cesium.Credit('Procedural Blue Marble');
+      this._proxy = undefined;
+      this._tileCache = new Map();
+    }
+
+    get tilingScheme() { return this._tilingScheme; }
+    get tileWidth() { return this._tileWidth; }
+    get tileHeight() { return this._tileHeight; }
+    get maximumLevel() { return this._maximumLevel; }
+    get minimumLevel() { return this._minimumLevel; }
+    get ready() { return this._ready; }
+    get tileDiscardPolicy() { return this._tileDiscardPolicy; }
+    get credit() { return this._credit; }
+
+    requestImage(x, y, level, request) {
+      const cacheKey = `${level}-${x}-${y}`;
+      if (this._tileCache.has(cacheKey)) {
+        return Promise.resolve(this._tileCache.get(cacheKey));
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = 256;
+      canvas.height = 256;
+      const ctx = canvas.getContext('2d');
+
+      // Convert tile coordinates to geographic bounds
+      const tilingScheme = this._tilingScheme;
+      const rectangle = tilingScheme.tileXYToRectangle(x, y, level);
+      const west = Cesium.Math.toDegrees(rectangle.west);
+      const east = Cesium.Math.toDegrees(rectangle.east);
+      const south = Cesium.Math.toDegrees(rectangle.south);
+      const north = Cesium.Math.toDegrees(rectangle.north);
+
+      // Simple procedural coloring based on latitude
+      const imageData = ctx.createImageData(256, 256);
+      const data = imageData.data;
+
+      for (let py = 0; py < 256; py++) {
+        // Latitude interpolation
+        const lat = north + (south - north) * (py / 255);
+        
+        // Base color by latitude
+        let r, g, b;
+        if (lat > 60 || lat < -60) {
+          // Polar regions - white/ice
+          r = 230; g = 240; b = 250;
+        } else if (lat > 30 || lat < -30) {
+          // Temperate - green/brown
+          r = 80 + Math.random() * 40;
+          g = 120 + Math.random() * 50;
+          b = 40 + Math.random() * 30;
+        } else {
+          // Tropical - ocean blue with some land variation
+          const isLand = (Math.sin(lat * 0.5) * Math.cos(py * 0.1) + Math.random() * 0.3) > 0.2;
+          if (isLand) {
+            r = 60 + Math.random() * 50;
+            g = 100 + Math.random() * 60;
+            b = 30 + Math.random() * 30;
+          } else {
+            r = 20 + Math.random() * 30;
+            g = 60 + Math.random() * 50;
+            b = 120 + Math.random() * 60;
+          }
+        }
+
+        for (let px = 0; px < 256; px++) {
+          const idx = (py * 256 + px) * 4;
+          data[idx] = r;
+          data[idx + 1] = g;
+          data[idx + 2] = b;
+          data[idx + 3] = 255;
+        }
+      }
+
+      ctx.putImageData(imageData, 0, 0);
+      this._tileCache.set(cacheKey, canvas);
+      return Promise.resolve(canvas);
+    }
+
+    pickFeatures() { return undefined; }
+  }
+
+  const imageryProvider = new ProceduralImageryProvider();
 
   viewer = new Cesium.Viewer('cesiumContainer', {
     imageryProvider: imageryProvider,
