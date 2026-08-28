@@ -202,7 +202,7 @@ async function verifyVideo() {
   console.log('Video ready, sending verification prompt...');
 
   // Retry wrapper for 503 (service overloaded) and 429 (rate limit/quota) errors
-  // Increased max retries to 30 with longer max delay (60s) to handle sustained 503/429
+  // Max 10 retries with longer max delay (60s) to handle sustained 503/429
   async function generateWithRetry(promptParts, modelName, maxRetries) {
     let lastError;
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -239,10 +239,10 @@ async function verifyVideo() {
 
   let result;
   try {
-    console.log(`Using primary model: ${PRIMARY_MODEL} (max 30 retries)`);
-    result = await generateWithRetry(promptParts, PRIMARY_MODEL, 30);
+    console.log(`Using primary model: ${PRIMARY_MODEL} (max 10 retries)`);
+    result = await generateWithRetry(promptParts, PRIMARY_MODEL, 10);
   } catch (e) {
-    console.error(`  ❌ Primary model (${PRIMARY_MODEL}) exhausted all 30 retries`);
+    console.error(`  ❌ Primary model (${PRIMARY_MODEL}) exhausted all 10 retries`);
     console.log(`Falling back to ${FALLBACK_MODEL} (max 15 retries)...`);
     try {
       result = await generateWithRetry(promptParts, FALLBACK_MODEL, 15);
