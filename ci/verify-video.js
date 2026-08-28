@@ -17,7 +17,8 @@ if (!fs.existsSync(VIDEO_PATH)) {
 }
 
 const genAI = new GoogleGenerativeAI(API_KEY);
-const model = genAI.getGenerativeModel({ model: 'gemini-3.7-flash' });
+const PRIMARY_MODEL = 'gemini-3.7-flash';
+const FALLBACK_MODEL = 'gemini-3.6-flash';
 
 const PROMPT = `
 Analyze this weather flythrough video with EXTREME STRICTNESS. This is for a production YouTube channel — quality must be professional. Reject anything that looks amateur, buggy, or incomplete.
@@ -94,7 +95,6 @@ async function uploadFile(filePath, mimeType, displayName) {
   const fileSize = fs.statSync(filePath).size;
   const startUrl = `https://generativelanguage.googleapis.com/upload/v1beta/files?key=${API_KEY}`;
   
-  // Step 1: Start resumable upload - send metadata only
   return new Promise((resolve, reject) => {
     const metadata = JSON.stringify({ file: { display_name: displayName } });
     
@@ -117,7 +117,6 @@ async function uploadFile(filePath, mimeType, displayName) {
           return;
         }
         
-        // Step 2: Upload file bytes to the resumable URL
         uploadFileBytes(uploadUrl, filePath, fileSize, mimeType).then(resolve).catch(reject);
       });
     });
@@ -188,7 +187,6 @@ async function verifyVideo() {
   console.log('Video uploaded:', videoFile.name);
   console.log('Waiting for video processing...');
 
-  // Wait for video to be processed
   let file = await getFile(videoFile.name);
   while (file.state === 'PROCESSING') {
     await new Promise(r => setTimeout(r, 5000));
@@ -204,25 +202,25 @@ async function verifyVideo() {
   console.log('Video ready, sending verification prompt...');
 
   // Retry wrapper for 503 (service overloaded) and 429 (rate limit/quota) errors
-  // max 12 retries with exponential backoff
-  async function generateWithRetry(promptParts, maxRetries = 12) {
+  async function generateWithRetry(promptParts, modelName, maxRetries) {
     let lastError;
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
-        return await model.generateContent(promptParts);
+        const currentModel = genAI.getGenerativeModel({ model: modelName });
+        const result = await currentModel.generateContent(promptParts);
+        return result;
       } catch (e) {
         lastError = e;
         const msg = e.message || '';
         const is503 = msg.includes('503') || msg.includes('Service Unavailable') || msg.includes('overloaded');
         const is429 = msg.includes('429') || msg.includes('Too Many Requests') || msg.includes('quota');
         if ((is503 || is429) && attempt < maxRetries) {
-          // Extract suggested retry delay if provided (e.g. "retryDelay": "19s")
           let delay = Math.min(1000 * Math.pow(2, attempt - 1), 30000);
           const retryMatch = msg.match(/retryDelay\":\s*"([\d.]+)s"/);
           if (retryMatch) {
             delay = Math.min(parseFloat(retryMatch[1]) * 1000 + 2000, 60000);
           }
-          console.log(`  ⚠️ ${is429 ? '429 Rate Limited' : '503 Service Overloaded'} (attempt ${attempt}/${maxRetries}), retrying in ${delay}ms...`);
+          console.log(`  ⚠️ ${is429 ? '429 Rate Limited' : '503 Service Overloaded'} (${modelName}, attempt ${attempt}/${maxRetries}), retrying in ${delay}ms...`);
           await new Promise(r => setTimeout(r, delay));
           continue;
         }
@@ -232,17 +230,32 @@ async function verifyVideo() {
     throw lastError;
   }
 
-  const result = await generateWithRetry([
+  const promptParts = [
     { fileData: { fileUri: videoFile.uri, mimeType: 'video/mp4' } },
     { text: PROMPT }
-  ]);
+  ];
+
+  let result;
+  try {
+    console.log(`Using primary model: ${PRIMARY_MODEL}`);
+    result = await generateWithRetry(promptParts, PRIMARY_MODEL, 12);
+  } catch (e) {
+    const msg = e.message || '';
+    const is503 = msg.includes('503') || msg.includes('Service Unavailable') || msg.includes('overloaded');
+    const is429 = msg.includes('429') || msg.includes('Too Many Requests') || msg.includes('quota');
+    if (is503 || is429) {
+      console.log(`  🔄 Primary model (${PRIMARY_MODEL}) exhausted retries, falling back to ${FALLBACK_MODEL}...`);
+      result = await generateWithRetry(promptParts, FALLBACK_MODEL, 6);
+    } else {
+      throw e;
+    }
+  }
 
   const response = result.response.text();
   console.log('Gemini response:', response);
 
   let parsed;
   try {
-    // Extract JSON from response (in case there's markdown wrapper)
     const jsonMatch = response.match(/\{[\s\S]*\}/);
     parsed = JSON.parse(jsonMatch ? jsonMatch[0] : response);
   } catch (e) {
@@ -262,7 +275,6 @@ async function verifyVideo() {
     Object.entries(parsed.details).forEach(([k, v]) => console.log(`  ${k}: ${v}`));
   }
 
-  // Also fail if any detail is false (extra safety)
   let anyDetailFalse = false;
   if (parsed.details) {
     for (const [k, v] of Object.entries(parsed.details)) {
