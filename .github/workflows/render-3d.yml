@@ -123,6 +123,7 @@ jobs:
           fi
 
       - name: Verify video output
+        if: always()
         run: |
           set -e
           ls -la weather_3d_flythrough.mp4
@@ -144,13 +145,14 @@ jobs:
           echo "size_mb=$(du -m weather_3d_flythrough.mp4 | cut -f1)" >> "$GITHUB_ENV"
 
       - name: Upload video artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: weather-3d-flythrough
           path: weather_3d_flythrough.mp4
           retention-days: 7
           compression-level: 6
-          if-no-files-found: error
+          if-no-files-found: warn
 
       - name: Collect debug logs
         if: always()

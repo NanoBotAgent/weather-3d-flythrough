@@ -162,6 +162,26 @@ async function renderFrames() {
       
       // Small delay to ensure render completes
       await new Promise(r => setTimeout(r, 16));
+
+      // Brightness self-check: downscale the rendered globe and read back mean
+      // luminance. Catches genuinely blank/near-black renders before they waste
+      // a Gemini verification run (and before we upload a broken video).
+      const probe = document.createElement('canvas');
+      probe.width = 64;
+      probe.height = 36;
+      const pctx = probe.getContext('2d');
+      pctx.drawImage(canvas, 0, 0, 64, 36);
+      const px = pctx.getImageData(0, 0, 64, 36).data;
+      let lumSum = 0;
+      for (let i = 0; i < px.length; i += 4) {
+        lumSum += 0.299 * px[i] + 0.587 * px[i + 1] + 0.114 * px[i + 2];
+      }
+      const meanLum = lumSum / (64 * 36);
+      if (!window._frameLuminance) window._frameLuminance = [];
+      window._frameLuminance.push(meanLum);
+      if (frameNum % 30 === 0) {
+        console.log(`[brightness] frame ${frameNum}: mean luminance ${meanLum.toFixed(1)}/255`);
+      }
       
       const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
       const arrayBuffer = await blob.arrayBuffer();
@@ -237,6 +257,18 @@ async function renderFrames() {
 
   await framePromise;
   clearTimeout(timeout);
+
+  // Summarize frame brightness to surface dark/blank renders at a glance
+  const lum = await browserPage.evaluate(() => window._frameLuminance || []);
+  if (lum.length > 0) {
+    const mean = lum.reduce((a, b) => a + b, 0) / lum.length;
+    const min = Math.min(...lum);
+    const max = Math.max(...lum);
+    console.log(`[brightness] summary: ${lum.length} frames, mean=${mean.toFixed(1)}, min=${min.toFixed(1)}, max=${max.toFixed(1)} / 255`);
+    if (mean < 5) {
+      console.warn('[brightness] WARNING: rendered frames suspiciously dark (mean luminance < 5) - likely a blank/near-black render');
+    }
+  }
 
   console.log(`All ${frameCount} frames captured`);
   await browser.close();
