@@ -64,7 +64,7 @@ async function renderFrames() {
 
   const browser = await puppeteer.launch({
     headless: 'new',
-    protocolTimeout: 300000,
+    protocolTimeout: 600000,
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
@@ -84,13 +84,24 @@ async function renderFrames() {
     if (t === 'error' || t === 'warning') console.log(`[browser:${t}]`, msg.text());
   });
   await browserPage.on('pageerror', err => console.log('[browser:error]', err.message));
-  // Log all failed network requests
   await browserPage.on('requestfailed', req => console.log('[browser:requestfailed]', req.url(), req.failure().errorText));
+
+  let frameCount = 0;
+  let resolveFrame;
+  let framePromise = new Promise(r => { resolveFrame = r; });
+  let captureDone = false;
 
   await browserPage.exposeFunction('onFrameReady', async (frameNum, buffer) => {
     const framePath = path.join(OUTPUT_DIR, `frame_${String(frameNum).padStart(6, '0')}.png`);
     fs.writeFileSync(framePath, Buffer.from(buffer));
-    if (frameNum % 30 === 0) console.log(`Captured frame ${frameNum}/${TOTAL_FRAMES}`);
+    frameCount++;
+    if (frameCount % 30 === 0) console.log(`Captured frame ${frameCount}/${TOTAL_FRAMES}`);
+    if (frameCount >= TOTAL_FRAMES) {
+      captureDone = true;
+      resolveFrame();
+    } else {
+      framePromise = new Promise(r => { resolveFrame = r; });
+    }
   });
 
   console.log('Loading page...');
@@ -100,25 +111,101 @@ async function renderFrames() {
   console.log('Initializing Cesium viewer...');
   await browserPage.evaluate(() => window.initCesium());
   // Wait for the globe to start loading tiles
-  await new Promise(r => setTimeout(r, 10000));
+  await new Promise(r => setTimeout(r, 15000));
 
-  console.log('Starting animation...');
+  // Inject frame capture logic into the browser
+  await browserPage.evaluate((totalFrames) => {
+    window.captureFrame = async function(frameNum) {
+      const canvas = document.getElementById('cesiumContainer').querySelector('canvas');
+      if (!canvas) return;
+      
+      // Render the scene to get the latest frame
+      if (window.viewer) {
+        window.viewer.scene.render();
+      }
+      if (window.particleSystem) {
+        window.particleSystem.render();
+      }
+      
+      // Small delay to ensure render completes
+      await new Promise(r => setTimeout(r, 16));
+      
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+      const arrayBuffer = await blob.arrayBuffer();
+      const buffer = Array.from(new Uint8Array(arrayBuffer));
+      
+      // Send back to Node via exposed function
+      await window.onFrameReady(frameNum, buffer);
+    };
+  }, TOTAL_FRAMES);
+
+  console.log('Starting synchronized frame capture...');
+  
+  // Override the animation loop to be frame-synchronous
+  await browserPage.evaluate((totalFrames) => {
+    window.startAnimation = function(totalFrames) {
+      window.animationState = {
+        frame: 0,
+        totalFrames: totalFrames,
+        fps: 30,
+        secondsPerDay: 3,
+        currentPhase: 'intro',
+        locationIndex: 0,
+        dayIndex: 0,
+        flightProgress: 0
+      };
+      
+      const firstLoc = window.CONFIG.locations[0];
+      const firstDay = firstLoc.days[0];
+      window.weatherOverlay.updateInfo(firstLoc, firstDay);
+      window.particleSystem.setCondition(firstDay.condition, firstDay.rain / 100);
+      
+      window.renderNextFrame = async function() {
+        const state = window.animationState;
+        if (state.frame >= state.totalFrames) {
+          window.renderComplete = true;
+          return;
+        }
+        
+        const dt = 1 / state.fps;
+        
+        // Update camera/particles for this frame
+        window.updateCamera(dt);
+        window.particleSystem.render();
+        window.viewer.scene.render();
+        
+        // Capture this frame
+        await window.captureFrame(state.frame);
+        
+        state.frame++;
+        
+        // Schedule next frame
+        if (state.frame < state.totalFrames) {
+          setTimeout(window.renderNextFrame, 0);
+        } else {
+          window.renderComplete = true;
+        }
+      };
+      
+      window.renderNextFrame();
+    };
+  }, TOTAL_FRAMES);
+
+  // Start the synchronized animation
   await browserPage.evaluate((frames) => {
     window.startAnimation(frames);
   }, TOTAL_FRAMES);
 
-  for (let frame = 0; frame < TOTAL_FRAMES; frame++) {
-    // Give the RAF loop a moment to reach this frame
-    await new Promise(r => setTimeout(r, 8));
-    const buffer = await browserPage.screenshot({ type: 'png', encoding: 'binary' });
-    await browserPage.evaluate((f, b) => window.onFrameReady(f, b), frame, buffer);
-    if (frame % 150 === 0) {
-      const mem = process.memoryUsage();
-      console.log(`  frame ${frame}: heap ${Math.round(mem.heapUsed / 1048576)}MB`);
-    }
-  }
+  // Wait for all frames to be captured
+  const timeout = setTimeout(() => {
+    console.error('Timeout waiting for frames');
+    resolveFrame();
+  }, 3600000); // 1 hour timeout
 
-  console.log('All frames captured');
+  await framePromise;
+  clearTimeout(timeout);
+
+  console.log(`All ${frameCount} frames captured`);
   await browser.close();
   server.close();
 }
