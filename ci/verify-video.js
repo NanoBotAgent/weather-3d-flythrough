@@ -18,6 +18,7 @@ if (!fs.existsSync(VIDEO_PATH)) {
 
 const genAI = new GoogleGenerativeAI(API_KEY);
 const PRIMARY_MODEL = 'gemini-3.7-flash';
+const FALLBACK_MODEL = 'gemini-3.6-flash';
 
 const PROMPT = `
 Analyze this weather flythrough video with EXTREME STRICTNESS. This is for a production YouTube channel — quality must be professional. Reject anything that looks amateur, buggy, or incomplete.
@@ -242,7 +243,14 @@ async function verifyVideo() {
     result = await generateWithRetry(promptParts, PRIMARY_MODEL, 30);
   } catch (e) {
     console.error(`  ❌ Primary model (${PRIMARY_MODEL}) exhausted all 30 retries`);
-    throw e;
+    console.log(`Falling back to ${FALLBACK_MODEL} (max 15 retries)...`);
+    try {
+      result = await generateWithRetry(promptParts, FALLBACK_MODEL, 15);
+      console.log(`Fallback model (${FALLBACK_MODEL}) succeeded`);
+    } catch (fallbackError) {
+      console.error(`  ❌ Fallback model (${FALLBACK_MODEL}) also failed after 15 retries`);
+      throw fallbackError;
+    }
   }
 
   const response = result.response.text();
