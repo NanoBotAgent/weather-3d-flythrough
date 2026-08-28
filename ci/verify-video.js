@@ -203,7 +203,28 @@ async function verifyVideo() {
 
   console.log('Video ready, sending verification prompt...');
 
-  const result = await model.generateContent([
+  // Retry wrapper for 503 (service overloaded) errors - max 10 retries with exponential backoff
+  async function generateWithRetry(promptParts, maxRetries = 10) {
+    let lastError;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        return await model.generateContent(promptParts);
+      } catch (e) {
+        lastError = e;
+        const is503 = e.message && (e.message.includes('503') || e.message.includes('Service Unavailable') || e.message.includes('overloaded'));
+        if (is503 && attempt < maxRetries) {
+          const delay = Math.min(1000 * Math.pow(2, attempt - 1), 30000); // exponential backoff, max 30s
+          console.log(`  ⚠️ 503 Service Overloaded (attempt ${attempt}/${maxRetries}), retrying in ${delay}ms...`);
+          await new Promise(r => setTimeout(r, delay));
+          continue;
+        }
+        throw e;
+      }
+    }
+    throw lastError;
+  }
+
+  const result = await generateWithRetry([
     { fileData: { fileUri: videoFile.uri, mimeType: 'video/mp4' } },
     { text: PROMPT }
   ]);
