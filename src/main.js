@@ -480,6 +480,9 @@ function initCesium() {
     maximumRenderTimeChange: Infinity
   });
 
+  // Expose viewer to global scope for captureFrame
+  window.viewer = viewer;
+
   viewer.scene.globe.enableLighting = true;
   viewer.scene.sun.show = true;
   viewer.scene.moon.show = true;
