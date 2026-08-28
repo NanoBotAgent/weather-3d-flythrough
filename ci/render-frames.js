@@ -64,6 +64,7 @@ async function renderFrames() {
 
   const browser = await puppeteer.launch({
     headless: 'new',
+    protocolTimeout: 300000,
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',

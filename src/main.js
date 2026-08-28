@@ -28,10 +28,10 @@ const PARTICLE_SIZES = {
 };
 
 const PARTICLE_COUNTS = {
-  rain: 2000,
-  storm: 3000,
-  cloud: 800,
-  clear: 300
+  rain: 800,
+  storm: 1200,
+  cloud: 400,
+  clear: 150
 };
 
 function createParticleSystem(viewer, condition, intensity) {
