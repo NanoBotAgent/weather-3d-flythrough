@@ -18,7 +18,6 @@ if (!fs.existsSync(VIDEO_PATH)) {
 
 const genAI = new GoogleGenerativeAI(API_KEY);
 const PRIMARY_MODEL = 'gemini-3.7-flash';
-const FALLBACK_MODEL = 'gemini-3.6-flash';
 
 const PROMPT = `
 Analyze this weather flythrough video with EXTREME STRICTNESS. This is for a production YouTube channel — quality must be professional. Reject anything that looks amateur, buggy, or incomplete.
@@ -202,6 +201,7 @@ async function verifyVideo() {
   console.log('Video ready, sending verification prompt...');
 
   // Retry wrapper for 503 (service overloaded) and 429 (rate limit/quota) errors
+  // Increased max retries to 30 with longer max delay (60s) to handle sustained 503/429
   async function generateWithRetry(promptParts, modelName, maxRetries) {
     let lastError;
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -215,10 +215,11 @@ async function verifyVideo() {
         const is503 = msg.includes('503') || msg.includes('Service Unavailable') || msg.includes('overloaded');
         const is429 = msg.includes('429') || msg.includes('Too Many Requests') || msg.includes('quota');
         if ((is503 || is429) && attempt < maxRetries) {
-          let delay = Math.min(1000 * Math.pow(2, attempt - 1), 30000);
+          // Exponential backoff capped at 60 seconds
+          let delay = Math.min(1000 * Math.pow(2, attempt - 1), 60000);
           const retryMatch = msg.match(/retryDelay\":\s*"([\d.]+)s"/);
           if (retryMatch) {
-            delay = Math.min(parseFloat(retryMatch[1]) * 1000 + 2000, 60000);
+            delay = Math.min(parseFloat(retryMatch[1]) * 1000 + 2000, 120000);
           }
           console.log(`  ⚠️ ${is429 ? '429 Rate Limited' : '503 Service Overloaded'} (${modelName}, attempt ${attempt}/${maxRetries}), retrying in ${delay}ms...`);
           await new Promise(r => setTimeout(r, delay));
@@ -237,18 +238,11 @@ async function verifyVideo() {
 
   let result;
   try {
-    console.log(`Using primary model: ${PRIMARY_MODEL}`);
-    result = await generateWithRetry(promptParts, PRIMARY_MODEL, 12);
+    console.log(`Using primary model: ${PRIMARY_MODEL} (max 30 retries)`);
+    result = await generateWithRetry(promptParts, PRIMARY_MODEL, 30);
   } catch (e) {
-    const msg = e.message || '';
-    const is503 = msg.includes('503') || msg.includes('Service Unavailable') || msg.includes('overloaded');
-    const is429 = msg.includes('429') || msg.includes('Too Many Requests') || msg.includes('quota');
-    if (is503 || is429) {
-      console.log(`  🔄 Primary model (${PRIMARY_MODEL}) exhausted retries, falling back to ${FALLBACK_MODEL}...`);
-      result = await generateWithRetry(promptParts, FALLBACK_MODEL, 6);
-    } else {
-      throw e;
-    }
+    console.error(`  ❌ Primary model (${PRIMARY_MODEL}) exhausted all 30 retries`);
+    throw e;
   }
 
   const response = result.response.text();
