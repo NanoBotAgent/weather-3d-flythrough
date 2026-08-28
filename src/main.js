@@ -2,6 +2,9 @@ const THREE = window.THREE;
 
 class ParticleSystem3D {
   constructor(canvas, width, height) {
+    if (!THREE) {
+      throw new Error('THREE is not loaded - three.min.js failed to load');
+    }
     this.canvas = canvas;
     this.width = width;
     this.height = height;
@@ -375,6 +378,14 @@ let animationState = {
 };
 
 function initCesium() {
+  // Verify critical dependencies are loaded
+  if (!window.Cesium) {
+    throw new Error('Cesium is not loaded - CDN failed');
+  }
+  if (!window.THREE) {
+    throw new Error('THREE is not loaded - three.min.js failed to load');
+  }
+
   Cesium.Ion.defaultAccessToken = null;
 
   const terrainProvider = new Cesium.EllipsoidTerrainProvider();
@@ -500,6 +511,8 @@ function initCesium() {
       roll: 0
     }
   });
+  
+  console.log('initCesium completed successfully');
 }
 
 function easeInOutCubic(t) {
@@ -628,6 +641,9 @@ function animate() {
 }
 
 window.startAnimation = function(totalFrames) {
+  if (!weatherOverlay || !particleSystem) {
+    throw new Error('startAnimation called before initCesium completed - weatherOverlay/particleSystem not initialized');
+  }
   animationState.totalFrames = totalFrames;
   animationState.frame = 0;
   animationState.locationIndex = 0;
