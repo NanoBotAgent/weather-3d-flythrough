@@ -17,7 +17,8 @@ class ParticleSystem3D {
     this.renderer = new THREE.WebGLRenderer({
       canvas: canvas,
       alpha: true,
-      antialias: false
+      antialias: false,
+      preserveDrawingBuffer: true
     });
     this.renderer.setSize(width, height);
     this.renderer.setPixelRatio(1);
@@ -377,6 +378,10 @@ let animationState = {
   flightProgress: 0
 };
 
+// Expose the SAME object the injected render loop mutates, so updateCamera()
+// sees the advancing frame/day/location state (single source of truth).
+window.animationState = animationState;
+
 function initCesium() {
   // Verify critical dependencies are loaded
   if (!window.Cesium) {
@@ -530,26 +535,18 @@ function easeInOutCubic(t) {
 function updateCamera(dt) {
   const state = animationState;
   const locs = window.CONFIG.locations;
-  const loc = locs[state.locationIndex];
-  const day = loc.days[state.dayIndex];
+  const fps = state.fps;
+  const framesPerDay = Math.round(fps * state.secondsPerDay);
+  const introFrames = 30;
+  const flightFrames = 60;
+  const orbitLen = locs[0].days.length * framesPerDay; // 7 days per location
 
-  const phaseDuration = state.secondsPerDay * state.fps;
+  const frame = state.frame;
 
-  if (state.frame < 30) {
+  if (frame < introFrames) {
     state.currentPhase = 'intro';
-  } else if (state.locationIndex < locs.length - 1 && state.dayIndex === locs[state.locationIndex].days.length - 1) {
-    state.currentPhase = 'fly';
-  } else {
-    state.currentPhase = 'orbit';
-  }
-
-  // Get camera orientation for particle system
-  const heading = viewer.camera.heading;
-  const pitch = viewer.camera.pitch;
-  const roll = viewer.camera.roll;
-
-  if (state.currentPhase === 'intro') {
-    const progress = Math.min(1, state.frame / 30);
+    const loc = locs[0];
+    const progress = Math.min(1, frame / introFrames);
     const eased = easeInOutCubic(progress);
     viewer.camera.setView({
       destination: Cesium.Cartesian3.fromDegrees(loc.lon, loc.lat, 15000 * (1 - eased * 0.5)),
@@ -559,76 +556,80 @@ function updateCamera(dt) {
         roll: 0
       }
     });
-  } else if (state.currentPhase === 'orbit') {
-    const dayProgress = (state.frame % phaseDuration) / phaseDuration;
-    const angle = dayProgress * Math.PI * 2;
-    const radius = 12000;
-    const height = 8000;
+  } else {
+    // Deterministic segment mapping: intro, then per location [orbit(7 days) + flight]
+    const rel = frame - introFrames;
+    const segLen = orbitLen + flightFrames;
+    const locIndex = Math.min(Math.floor(rel / segLen), locs.length - 1);
+    const within = rel - locIndex * segLen;
+    const loc = locs[locIndex];
 
-    viewer.camera.setView({
-      destination: Cesium.Cartesian3.fromDegrees(
-        loc.lon + Math.sin(angle) * 0.02,
-        loc.lat + Math.cos(angle) * 0.015,
-        height
-      ),
-      orientation: {
-        heading: angle + Math.PI,
-        pitch: -Cesium.Math.PI_OVER_THREE,
-        roll: 0
-      }
-    });
+    const isFlying = (locIndex < locs.length - 1) && (within >= orbitLen);
 
-    if (state.frame % phaseDuration === 0) {
-      weatherOverlay.updateInfo(loc, day);
-      particleSystem.setCondition(day.condition, day.rain / 100);
-      if (day.condition.toLowerCase().includes('thunder') || day.condition.toLowerCase().includes('storm')) {
-        particleSystem.triggerLightning();
-      }
-    }
-  } else if (state.currentPhase === 'fly') {
-    if (state.flightProgress === 0) {
-      state.flightDuration = 60;
-    }
+    if (isFlying) {
+      // Gliding flight from locIndex to locIndex+1
+      state.currentPhase = 'fly';
+      const fromLoc = locs[locIndex];
+      const toLoc = locs[locIndex + 1];
+      const flightProgress = Math.min(1, (within - orbitLen) / flightFrames);
+      const eased = easeInOutCubic(flightProgress);
 
-    state.flightProgress += dt;
-    const progress = Math.min(1, state.flightProgress / (state.flightDuration / state.fps));
-    const eased = easeInOutCubic(progress);
+      const lon = fromLoc.lon + (toLoc.lon - fromLoc.lon) * eased;
+      const lat = fromLoc.lat + (toLoc.lat - fromLoc.lat) * eased;
+      const height = 15000 + Math.sin(flightProgress * Math.PI) * 5000;
 
-    const fromLoc = locs[state.locationIndex];
-    const toLoc = locs[state.locationIndex + 1];
-
-    const lon = fromLoc.lon + (toLoc.lon - fromLoc.lon) * eased;
-    const lat = fromLoc.lat + (toLoc.lat - fromLoc.lat) * eased;
-    const height = 15000 + Math.sin(progress * Math.PI) * 5000;
-
-    viewer.camera.setView({
-      destination: Cesium.Cartesian3.fromDegrees(lon, lat, height),
-      orientation: {
-        heading: progress * Math.PI * 0.5,
-        pitch: -Cesium.Math.PI_OVER_FOUR - Math.sin(progress * Math.PI) * 0.3,
-        roll: 0
-      }
-    });
-
-    if (progress >= 1) {
-      state.locationIndex++;
-      state.dayIndex = 0;
-      state.flightProgress = 0;
+      viewer.camera.setView({
+        destination: Cesium.Cartesian3.fromDegrees(lon, lat, height),
+        orientation: {
+          heading: flightProgress * Math.PI * 0.5,
+          pitch: -Cesium.Math.PI_OVER_FOUR - Math.sin(flightProgress * Math.PI) * 0.3,
+          roll: 0
+        }
+      });
+    } else {
+      // Orbiting a single location, advancing through its days
       state.currentPhase = 'orbit';
-      const newLoc = locs[state.locationIndex];
-      weatherOverlay.updateInfo(newLoc, newLoc.days[0]);
-      particleSystem.setCondition(newLoc.days[0].condition, newLoc.days[0].rain / 100);
-      if (newLoc.days[0].condition.toLowerCase().includes('thunder') || newLoc.days[0].condition.toLowerCase().includes('storm')) {
-        particleSystem.triggerLightning();
+      state.locationIndex = locIndex;
+      const clampedWithin = Math.min(within, orbitLen - 1);
+      const dayIndex = Math.min(Math.floor(clampedWithin / framesPerDay), loc.days.length - 1);
+      state.dayIndex = dayIndex;
+      const day = loc.days[dayIndex];
+      const dayProgress = (clampedWithin % framesPerDay) / framesPerDay;
+      const angle = dayProgress * Math.PI * 2;
+      const height = 8000;
+
+      viewer.camera.setView({
+        destination: Cesium.Cartesian3.fromDegrees(
+          loc.lon + Math.sin(angle) * 0.02,
+          loc.lat + Math.cos(angle) * 0.015,
+          height
+        ),
+        orientation: {
+          heading: angle + Math.PI,
+          pitch: -Cesium.Math.PI_OVER_THREE,
+          roll: 0
+        }
+      });
+
+      // Refresh overlay + particles only when the day/location actually changes
+      const key = locIndex + ':' + dayIndex;
+      if (key !== state._lastDayKey) {
+        weatherOverlay.updateInfo(loc, day);
+        particleSystem.setCondition(day.condition, day.rain / 100);
+        if (day.condition.toLowerCase().includes('thunder') || day.condition.toLowerCase().includes('storm')) {
+          particleSystem.triggerLightning();
+        }
+        state._lastDayKey = key;
       }
     }
   }
 
-  // Sync particle system camera
+  // Sync particle system camera orientation
   if (particleSystem) {
-    particleSystem.update(dt, 
+    particleSystem.update(
+      dt,
       { x: 0, y: 0, z: 0 },
-      { x: pitch, y: heading, z: roll }
+      { x: viewer.camera.pitch, y: viewer.camera.heading, z: viewer.camera.roll }
     );
   }
 }
