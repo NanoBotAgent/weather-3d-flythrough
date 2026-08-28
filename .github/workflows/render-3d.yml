@@ -83,11 +83,10 @@ jobs:
           node ci/stitch-video.js 2>&1 | tee stitch-output.log
 
       - name: Verify video with Gemini
-        if: always()
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          set -e
+          set -euo pipefail
           npm install @google/generative-ai
           node ci/verify-video.js 2>&1 | tee gemini-verification.log
 
