@@ -79,12 +79,18 @@ async function renderFrames() {
 
   const browserPage = await browser.newPage();
   await browserPage.setViewport({ width: WIDTH, height: HEIGHT, deviceScaleFactor: 1 });
-  await browserPage.on('console', msg => {
+  
+  // Track browser errors
+  let browserError = null;
+  browserPage.on('console', msg => {
     const t = msg.type();
     if (t === 'error' || t === 'warning') console.log(`[browser:${t}]`, msg.text());
   });
-  await browserPage.on('pageerror', err => console.log('[browser:error]', err.message));
-  await browserPage.on('requestfailed', req => console.log('[browser:requestfailed]', req.url(), req.failure().errorText));
+  browserPage.on('pageerror', err => {
+    console.log('[browser:error]', err.message);
+    browserError = err.message;
+  });
+  browserPage.on('requestfailed', req => console.log('[browser:requestfailed]', req.url(), req.failure().errorText));
 
   let frameCount = 0;
   let resolveFrame;
@@ -109,15 +115,46 @@ async function renderFrames() {
   await browserPage.waitForFunction(() => window.Cesium !== undefined, { timeout: 180000 });
 
   console.log('Initializing Cesium viewer...');
-  await browserPage.evaluate(() => window.initCesium());
-  // Wait for the globe to start loading tiles
-  await new Promise(r => setTimeout(r, 15000));
+  try {
+    await browserPage.evaluate(() => window.initCesium());
+  } catch (e) {
+    console.error('initCesium FAILED:', e.message);
+    // Dump browser console logs and check for errors
+    const logs = await browserPage.evaluate(() => {
+      return Array.from(document.querySelectorAll('script')).map(s => s.src).join('\n');
+    });
+    console.error('Scripts loaded:', logs);
+    if (browserError) console.error('Browser error during init:', browserError);
+    throw e;
+  }
+
+  // Verify Cesium canvas exists after init
+  const canvasCheck = await browserPage.evaluate(() => {
+    const container = document.getElementById('cesiumContainer');
+    const canvas = container ? container.querySelector('canvas') : null;
+    return { hasContainer: !!container, hasCanvas: !!canvas, canvasWidth: canvas?.width, canvasHeight: canvas?.height };
+  });
+  console.log('Canvas check:', JSON.stringify(canvasCheck));
+  if (!canvasCheck.hasCanvas) {
+    throw new Error('Cesium canvas not found after initCesium');
+  }
+
+  // Wait for the globe to start loading tiles with progress logging
+  console.log('Waiting for globe tiles (15s)...');
+  for (let i = 0; i < 15; i++) {
+    await new Promise(r => setTimeout(r, 1000));
+    if (i % 3 === 0) console.log(`  Tile wait: ${i + 1}/15s`);
+  }
 
   // Inject frame capture logic into the browser
   await browserPage.evaluate((totalFrames) => {
     window.captureFrame = async function(frameNum) {
-      const canvas = document.getElementById('cesiumContainer').querySelector('canvas');
-      if (!canvas) return;
+      const container = document.getElementById('cesiumContainer');
+      const canvas = container ? container.querySelector('canvas') : null;
+      if (!canvas) {
+        console.error('Capture frame: canvas not found');
+        return;
+      }
       
       // Render the scene to get the latest frame
       if (window.viewer) {
