@@ -63,9 +63,8 @@ function createParticleSystem(viewer, condition, intensity) {
     image: createRainImage(type),
     startColor: color,
     endColor: new Cesium.Color(color.red, color.green, color.blue, 0.0),
-    forces: [
-      new Cesium.GravityVector(Cesium.Cartesian3.ZERO, -20),
-      new Cesium.WindVector(new Cesium.Cartesian3(10, 5, 0))
+    burst: [
+      new Cesium.ParticleBurst({ time: 0, count: count })
     ]
   });
 
