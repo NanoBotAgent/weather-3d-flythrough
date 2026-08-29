@@ -482,7 +482,12 @@ function initCesium() {
     navigationHelpButton: false,
     scene3DOnly: true,
     requestRenderMode: true,
-    maximumRenderTimeChange: Infinity
+    maximumRenderTimeChange: Infinity,
+    contextOptions: {
+      webgl: {
+        preserveDrawingBuffer: true
+      }
+    }
   });
 
   // Expose viewer to global scope for captureFrame
