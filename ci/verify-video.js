@@ -23,7 +23,7 @@ const FALLBACK_MODEL = 'gemini-3.6-flash';
 const PROMPT = `
 You are reviewing an animated 3D weather flythrough video destined for YouTube. Assess whether it looks polished enough to post, or too simple/janky. Judge ONLY what a viewer would actually see on screen.
 
-What the render produces: a CesiumJS 3D globe (procedural blue-marble coloring, no real satellite imagery), a three.js particle overlay for weather, and an HTML info panel. Reject clear defects, but do NOT fail it for style choices outside this scope (no real terrain heightmap, no live day/night terminator).
+What the render produces: a 3D globe (procedural blue-marble coloring, no real satellite imagery), a three.js particle overlay for weather, and an HTML info panel. Reject clear defects, but do NOT fail it for style choices outside this scope (no real terrain heightmap, no live day/night terminator).
 
 Verify ALL of the following. If any clearly fails, set "pass": false.
 
@@ -34,7 +34,7 @@ Verify ALL of the following. If any clearly fails, set "pass": false.
 4. **Storm effects** - Thunderstorm days show heavy rain together with lightning flashes (not rain alone).
 5. **Info panel readability** - A readable overlay panel showing the location name, day label, weather condition, and low/high temperatures. Text is crisp and legible.
 6. **Text updates** - Panel content changes as the camera advances between days and between the two locations.
-7. **Lighting** - The globe is lit on the camera-facing side; frames are bright enough to see detail (not a near-black frame).
+7. **Lighting** - The globe is clearly visible and bright enough to see detail; frames must not be near-black.
 8. **Color** - Cohesive, professional palette. Not washed out, not oversaturated.
 9. **No glitches** - No black frames, solid-color flashes, texture flicker, camera clipping, or missing content.
 10. **Composition** - Frames are visually balanced and interesting, not flat or empty.

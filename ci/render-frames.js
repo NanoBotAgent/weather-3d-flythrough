@@ -108,13 +108,13 @@ async function renderFrames() {
 
   console.log('Loading page...');
   await browserPage.goto(url, { waitUntil: 'networkidle0', timeout: 180000 });
-  await browserPage.waitForFunction(() => window.Cesium !== undefined, { timeout: 180000 });
+  await browserPage.waitForFunction(() => window.THREE !== undefined, { timeout: 180000 });
 
-  console.log('Initializing Cesium viewer...');
+  console.log('Initializing globe scene...');
   try {
-    await browserPage.evaluate(() => window.initCesium());
+    await browserPage.evaluate(() => window.initScene());
   } catch (e) {
-    console.error('initCesium FAILED:', e.message);
+    console.error('initScene FAILED:', e.message);
     // Dump browser console logs and check for errors
     const logs = await browserPage.evaluate(() => {
       return Array.from(document.querySelectorAll('script')).map(s => s.src).join('\n');
@@ -124,23 +124,19 @@ async function renderFrames() {
     throw e;
   }
 
-  // Verify Cesium canvas exists after init
+  // Verify globe canvas exists after init
   const canvasCheck = await browserPage.evaluate(() => {
-    const container = document.getElementById('cesiumContainer');
-    const canvas = container ? container.querySelector('canvas') : null;
-    return { hasContainer: !!container, hasCanvas: !!canvas, canvasWidth: canvas?.width, canvasHeight: canvas?.height };
+    const canvas = document.getElementById('globeCanvas');
+    return { hasCanvas: !!canvas, canvasWidth: canvas?.width, canvasHeight: canvas?.height };
   });
   console.log('Canvas check:', JSON.stringify(canvasCheck));
   if (!canvasCheck.hasCanvas) {
-    throw new Error('Cesium canvas not found after initCesium');
+    throw new Error('globeCanvas not found after initScene');
   }
 
-  // Wait for the globe to start loading tiles with progress logging
-  console.log('Waiting for globe tiles (15s)...');
-  for (let i = 0; i < 15; i++) {
-    await new Promise(r => setTimeout(r, 1000));
-    if (i % 3 === 0) console.log(`  Tile wait: ${i + 1}/15s`);
-  }
+  // Short settle delay so the first render + DOM panel are ready before capture.
+  console.log('Settling (2s before capture)...');
+  await new Promise(r => setTimeout(r, 2000));
 
   // Inject frame capture logic into the browser
   await browserPage.evaluate((totalFrames) => {
@@ -235,8 +231,7 @@ async function renderFrames() {
     };
 
     window.captureFrame = async function(frameNum) {
-      const container = document.getElementById('cesiumContainer');
-      const globe = container ? container.querySelector('canvas') : null;
+      const globe = document.getElementById('globeCanvas');
       const rain = document.getElementById('rainOverlay');
       if (!globe) {
         console.error('Capture frame: globe canvas not found');
@@ -252,7 +247,7 @@ async function renderFrames() {
       comp.height = 1080;
       const ctx = comp.getContext('2d');
 
-      // 1. Cesium globe
+      // 1. Three.js globe
       ctx.drawImage(globe, 0, 0, 1920, 1080);
       // 2. three.js particle overlay (transparent, on top of globe)
       if (rain && rain.width > 0 && rain.height > 0) {
@@ -324,7 +319,7 @@ async function renderFrames() {
         // and particle positions (it calls particleSystem.update internally).
         window.updateCamera(dt);
         window.particleSystem.render();
-        window.viewer.scene.render();
+        window.globeRenderer.render();
 
         await window.captureFrame(state.frame);
 

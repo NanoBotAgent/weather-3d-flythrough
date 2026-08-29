@@ -9,11 +9,11 @@ class ParticleSystem3D {
     this.width = width;
     this.height = height;
     this.scene = new THREE.Scene();
-    
+
     // Use PerspectiveCamera for true 3D billboard rendering
     this.camera = new THREE.PerspectiveCamera(60, width / height, 0.1, 500);
     this.camera.position.set(0, 0, 0);
-    
+
     this.renderer = new THREE.WebGLRenderer({
       canvas: canvas,
       alpha: true,
@@ -27,7 +27,7 @@ class ParticleSystem3D {
     this.condition = 'clear';
     this.intensity = 1;
     this.time = 0;
-    
+
     this.lightningActive = false;
     this.lightningTime = 0;
 
@@ -91,7 +91,7 @@ class ParticleSystem3D {
     const frustumDepth = 150;
     const frustumWidth = 200;
     const frustumHeight = 150;
-    
+
     positions[i * 3] = (Math.random() - 0.5) * frustumWidth;
     positions[i * 3 + 1] = (Math.random() - 0.5) * frustumHeight;
     positions[i * 3 + 2] = -(Math.random() * frustumDepth + 10);
@@ -161,7 +161,7 @@ class ParticleSystem3D {
       const frustumDepth = 150;
       const frustumWidth = 200;
       const frustumHeight = 150;
-      
+
       positions[i * 3] = (Math.random() - 0.5) * frustumWidth;
       positions[i * 3 + 1] = (Math.random() - 0.5) * frustumHeight;
       positions[i * 3 + 2] = -(Math.random() * frustumDepth + 10);
@@ -169,8 +169,7 @@ class ParticleSystem3D {
       sizes[i] = (Math.random() * 1.5 + 0.5) * sizeMult;
       alphas[i] = Math.random() * 0.3 + alphaBase;
       types[i] = particleType;
-      
-      // Add variation to color
+
       colors[i * 3] = baseColor.r * (0.8 + Math.random() * 0.4);
       colors[i * 3 + 1] = baseColor.g * (0.8 + Math.random() * 0.4);
       colors[i * 3 + 2] = baseColor.b * (0.8 + Math.random() * 0.4);
@@ -201,8 +200,10 @@ class ParticleSystem3D {
 
   update(dt, cameraPosition, cameraRotation) {
     this.time += dt;
-    
-    // Update camera to match Cesium view (position at origin, particles move relative)
+
+    // Particles are an ambient overlay fixed to screen space (camera at origin,
+    // looking down -Z). The globe's motion is driven independently in the globe
+    // scene, so keep the particle camera at a stable orientation.
     this.camera.rotation.set(cameraRotation.x, cameraRotation.y, cameraRotation.z, 'XYZ');
 
     const positions = this.geometry.attributes.position.array;
@@ -233,8 +234,7 @@ class ParticleSystem3D {
         positions[i * 3] = (Math.random() - 0.5) * frustumWidth;
         positions[i * 3 + 1] = frustumHeight / 2 + Math.random() * 50;
         positions[i * 3 + 2] = -(Math.random() * frustumDepth + 10);
-        
-        // Keep same type characteristics
+
         const type = types[i];
         if (type === 2) { velocities[i * 3 + 1] = -(Math.random() * 8 + 4); sizes[i] *= 1.2; }
         else if (type === 1) { velocities[i * 3 + 1] = -(Math.random() * 5 + 2); }
@@ -298,7 +298,7 @@ class WeatherOverlay {
       backdrop-filter: blur(24px);
       min-width: 480px;
       text-align: center;
-      box-shadow: 
+      box-shadow:
         0 12px 48px rgba(0,0,0,0.5),
         0 0 0 1px rgba(16, 185, 129, 0.1) inset,
         0 0 60px rgba(16, 185, 129, 0.05);
@@ -348,10 +348,9 @@ class WeatherOverlay {
     const highEl = document.getElementById('highTemp');
     const rainEl = document.getElementById('rainChance');
 
-    // Animate content change
     [locEl, dayEl, condEl, lowEl, highEl, rainEl].forEach(el => {
       el.style.animation = 'none';
-      el.offsetHeight; // trigger reflow
+      el.offsetHeight;
       el.style.animation = 'textFadeIn 0.3s ease-out';
     });
 
@@ -364,69 +363,47 @@ class WeatherOverlay {
   }
 }
 
-let viewer;
-let particleSystem;
-let weatherOverlay;
-let animationState = {
-  frame: 0,
-  totalFrames: 0,
-  fps: 30,
-  secondsPerDay: 3,
-  currentPhase: 'intro',
-  locationIndex: 0,
-  dayIndex: 0,
-  flightProgress: 0
-};
+// ---------------------------------------------------------------------------
+// Three.js globe renderer (replaces CesiumJS). Cesium's globe surface does not
+// render under SwiftShader (software WebGL2) in headless CI; three.js WebGL1
+// works reliably (the particle overlay already proves this). We render the same
+// procedural blue-marble equirectangular texture onto a lit sphere.
+// ---------------------------------------------------------------------------
+const GLOBE_RADIUS = 1.0;
+const BASE_CAM_DIST = 3.0;
 
-// Expose the SAME object the injected render loop mutates, so updateCamera()
-// sees the advancing frame/day/location state (single source of truth).
-window.animationState = animationState;
+function lonLatToPosition(lonDeg, latDeg, radius) {
+  const lat = latDeg * Math.PI / 180;
+  const lon = lonDeg * Math.PI / 180;
+  const x = radius * Math.cos(lat) * Math.cos(lon);
+  const y = radius * Math.sin(lat);
+  const z = radius * Math.cos(lat) * Math.sin(lon);
+  return new THREE.Vector3(x, y, z);
+}
 
-function initCesium() {
-  // Verify critical dependencies are loaded
-  if (!window.Cesium) {
-    throw new Error('Cesium is not loaded - CDN failed');
-  }
-  if (!window.THREE) {
-    throw new Error('THREE is not loaded - three.min.js failed to load');
-  }
-
-  Cesium.Ion.defaultAccessToken = null;
-
-  const terrainProvider = new Cesium.EllipsoidTerrainProvider();
-
-  // Generate procedural blue marble canvas - single tile covering entire globe
-  // Works 100% offline, no network dependencies, no custom ImageryProvider class needed
+function buildBlueMarbleTexture() {
   const globeCanvas = document.createElement('canvas');
   globeCanvas.width = 2048;
   globeCanvas.height = 1024;
   const ctx = globeCanvas.getContext('2d');
 
-  // Create equirectangular projection blue marble
   const imageData = ctx.createImageData(2048, 1024);
   const data = imageData.data;
 
   for (let py = 0; py < 1024; py++) {
-    // Latitude: -90 (south) to +90 (north)
     const lat = 90 - (py / 1023) * 180;
-    
+
     for (let px = 0; px < 2048; px++) {
-      // Longitude: -180 to +180
       const lon = -180 + (px / 2047) * 360;
-      
-      // Simple procedural coloring based on latitude with longitude variation
       let r, g, b;
-      
+
       if (lat > 65 || lat < -65) {
-        // Polar ice caps
         r = 240 + Math.random() * 15;
         g = 245 + Math.random() * 10;
         b = 255;
       } else if (lat > 35 || lat < -35) {
-        // Temperate zones - land and ocean mix
         const noise = Math.sin(lon * 0.05) * Math.cos(lat * 0.03) + Math.sin(lon * 0.02) * 0.5;
-        const isLand = noise > 0.1;
-        if (isLand) {
+        if (noise > 0.1) {
           r = 80 + Math.random() * 60;
           g = 110 + Math.random() * 70;
           b = 40 + Math.random() * 40;
@@ -436,10 +413,8 @@ function initCesium() {
           b = 130 + Math.random() * 50;
         }
       } else {
-        // Tropical/subtropical - mostly ocean with land masses
         const noise = Math.sin(lon * 0.04) * Math.cos(lat * 0.02) + Math.sin(lon * 0.015) * 0.3;
-        const isLand = noise > 0.0;
-        if (isLand) {
+        if (noise > 0.0) {
           r = 60 + Math.random() * 50;
           g = 100 + Math.random() * 70;
           b = 35 + Math.random() * 35;
@@ -460,77 +435,162 @@ function initCesium() {
 
   ctx.putImageData(imageData, 0, 0);
 
-  // Single tile imagery provider covering entire globe
-  const imageryProvider = new Cesium.SingleTileImageryProvider({
-    url: globeCanvas.toDataURL('image/png'),
-    rectangle: Cesium.Rectangle.fromDegrees(-180, -90, 180, 90),
-    credit: new Cesium.Credit('Procedural Blue Marble')
-  });
+  const tex = new THREE.CanvasTexture(globeCanvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.generateMipmaps = true;
+  tex.needsUpdate = true;
+  return tex;
+}
 
-  viewer = new Cesium.Viewer('cesiumContainer', {
-    imageryProvider: imageryProvider,
-    terrainProvider: terrainProvider,
-    animation: false,
-    timeline: false,
-    infoBox: false,
-    homeButton: false,
-    fullscreenButton: false,
-    selectionIndicator: false,
-    baseLayerPicker: false,
-    geocoder: false,
-    sceneModePicker: false,
-    navigationHelpButton: false,
-    scene3DOnly: true,
-    requestRenderMode: true,
-    maximumRenderTimeChange: Infinity,
-    contextOptions: {
-      webgl: {
-        preserveDrawingBuffer: true
-      }
+class GlobeRenderer {
+  constructor(canvas, width, height) {
+    this.canvas = canvas;
+    this.width = width;
+    this.height = height;
+
+    this.scene = new THREE.Scene();
+    this.scene.background = new THREE.Color(0x020612);
+
+    this.camera = new THREE.PerspectiveCamera(52, width / height, 0.01, 100);
+    this.camera.up.set(0, 1, 0);
+
+    this.renderer = new THREE.WebGLRenderer({
+      canvas: canvas,
+      alpha: false,
+      antialias: false,
+      preserveDrawingBuffer: true
+    });
+    this.renderer.setSize(width, height);
+    this.renderer.setPixelRatio(1);
+
+    this.globeGroup = new THREE.Group();
+    this.scene.add(this.globeGroup);
+
+    this.buildGlobe();
+    this.buildAtmosphere();
+    this.buildStars();
+  }
+
+  buildGlobe() {
+    const tex = buildBlueMarbleTexture();
+    const geo = new THREE.SphereGeometry(GLOBE_RADIUS, 96, 64);
+    // Unlit material: always full-bright so the globe is unmistakably visible,
+    // regardless of light direction or software-GL lighting support.
+    const mat = new THREE.MeshBasicMaterial({ map: tex });
+    this.globe = new THREE.Mesh(geo, mat);
+    this.globeGroup.add(this.globe);
+  }
+
+  buildAtmosphere() {
+    const geo = new THREE.SphereGeometry(GLOBE_RADIUS * 1.06, 48, 32);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0x3b82f6,
+      transparent: true,
+      opacity: 0.16,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.BackSide
+    });
+    this.atmosphere = new THREE.Mesh(geo, mat);
+    this.globeGroup.add(this.atmosphere);
+  }
+
+  buildStars() {
+    const count = 2200;
+    const positions = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      const u = Math.random() * 2 - 1;
+      const theta = Math.random() * Math.PI * 2;
+      const s = Math.sqrt(Math.max(0, 1 - u * u));
+      const radius = 9 + Math.random() * 6;
+      positions[i * 3] = s * Math.cos(theta) * radius;
+      positions[i * 3 + 1] = u * radius;
+      positions[i * 3 + 2] = s * Math.sin(theta) * radius;
     }
-  });
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const mat = new THREE.PointsMaterial({
+      color: 0xffffff,
+      size: 0.03,
+      sizeAttenuation: true,
+      transparent: true,
+      opacity: 0.8,
+      depthWrite: false
+    });
+    this.stars = new THREE.Points(geo, mat);
+    this.scene.add(this.stars);
+  }
 
-  // Expose viewer to global scope for captureFrame
-  window.viewer = viewer;
+  setView(lonDeg, latDeg, dist) {
+    this.camera.position.copy(lonLatToPosition(lonDeg, latDeg, dist));
+    this.camera.lookAt(0, 0, 0);
+  }
 
-  viewer.scene.globe.enableLighting = true;
-  viewer.scene.sun.show = true;
-  viewer.scene.moon.show = true;
-  viewer.scene.skyAtmosphere.show = true;
-  viewer.scene.skyAtmosphere.hueShift = -0.1;
-  viewer.scene.skyAtmosphere.saturationShift = -0.2;
-  viewer.scene.skyAtmosphere.brightnessShift = -0.3;
-  viewer.scene.fog.enabled = true;
-  viewer.scene.fog.density = 0.0003;
-  viewer.scene.fog.minimumBrightness = 0.01;
-  viewer.scene.backgroundColor = new Cesium.Color(0.04, 0.06, 0.1, 1.0);
+  render() {
+    this.renderer.render(this.scene, this.camera);
+  }
 
-  viewer.scene.globe.depthTestAgainstTerrain = true;
-  viewer.scene.globe.baseColor = new Cesium.Color(0.04, 0.06, 0.1, 1.0);
+  resize(width, height) {
+    this.width = width;
+    this.height = height;
+    this.camera.aspect = width / height;
+    this.camera.updateProjectionMatrix();
+    this.renderer.setSize(width, height);
+  }
+}
 
-  const canvas = document.getElementById('rainOverlay');
-  particleSystem = new ParticleSystem3D(canvas, window.innerWidth, window.innerHeight);
+let globeRenderer;
+let particleSystem;
+let weatherOverlay;
+let animationState = {
+  frame: 0,
+  totalFrames: 0,
+  fps: 30,
+  secondsPerDay: 3,
+  currentPhase: 'intro',
+  locationIndex: 0,
+  dayIndex: 0,
+  flightProgress: 0
+};
+
+// Expose the SAME object the injected render loop mutates, so updateCamera()
+// sees the advancing frame/day/location state (single source of truth).
+window.animationState = animationState;
+
+function initScene() {
+  if (!window.THREE) {
+    throw new Error('THREE is not loaded - three.min.js failed to load');
+  }
+
+  const globeCanvas = document.getElementById('globeCanvas');
+  if (!globeCanvas) {
+    throw new Error('globeCanvas element not found');
+  }
+
+  const W = window.innerWidth;
+  const H = window.innerHeight;
+  globeRenderer = new GlobeRenderer(globeCanvas, W, H);
+  window.globeRenderer = globeRenderer;
+
+  const rainCanvas = document.getElementById('rainOverlay');
+  particleSystem = new ParticleSystem3D(rainCanvas, W, H);
   window.particleSystem = particleSystem;
-  console.log('particleSystem created:', !!particleSystem);
-  
+
   weatherOverlay = new WeatherOverlay(document.body);
   window.weatherOverlay = weatherOverlay;
-  console.log('weatherOverlay created:', !!weatherOverlay, 'type:', typeof weatherOverlay);
 
   window.addEventListener('resize', () => {
+    globeRenderer.resize(window.innerWidth, window.innerHeight);
     particleSystem.resize(window.innerWidth, window.innerHeight);
   });
 
-  viewer.camera.setView({
-    destination: Cesium.Cartesian3.fromDegrees(5.37, 50.1, 15000),
-    orientation: {
-      heading: 0,
-      pitch: -Cesium.Math.PI_OVER_FOUR,
-      roll: 0
-    }
-  });
-  
-  console.log('initCesium completed successfully');
+  const firstLoc = window.CONFIG.locations[0];
+  globeRenderer.setView(firstLoc.lon, firstLoc.lat, BASE_CAM_DIST);
+  console.log('initScene completed successfully');
 }
 
 function easeInOutCubic(t) {
@@ -553,16 +613,9 @@ function updateCamera(dt) {
     const loc = locs[0];
     const progress = Math.min(1, frame / introFrames);
     const eased = easeInOutCubic(progress);
-    viewer.camera.setView({
-      destination: Cesium.Cartesian3.fromDegrees(loc.lon, loc.lat, 15000 * (1 - eased * 0.5)),
-      orientation: {
-        heading: 0,
-        pitch: -Cesium.Math.PI_OVER_FOUR * (1 - eased * 0.3),
-        roll: 0
-      }
-    });
+    const dist = (BASE_CAM_DIST + 2.0) - eased * 2.0;
+    globeRenderer.setView(loc.lon, loc.lat, dist);
   } else {
-    // Deterministic segment mapping: intro, then per location [orbit(7 days) + flight]
     const rel = frame - introFrames;
     const segLen = orbitLen + flightFrames;
     const locIndex = Math.min(Math.floor(rel / segLen), locs.length - 1);
@@ -572,7 +625,6 @@ function updateCamera(dt) {
     const isFlying = (locIndex < locs.length - 1) && (within >= orbitLen);
 
     if (isFlying) {
-      // Gliding flight from locIndex to locIndex+1
       state.currentPhase = 'fly';
       const fromLoc = locs[locIndex];
       const toLoc = locs[locIndex + 1];
@@ -581,42 +633,31 @@ function updateCamera(dt) {
 
       const lon = fromLoc.lon + (toLoc.lon - fromLoc.lon) * eased;
       const lat = fromLoc.lat + (toLoc.lat - fromLoc.lat) * eased;
-      const height = 15000 + Math.sin(flightProgress * Math.PI) * 5000;
+      const dist = BASE_CAM_DIST + Math.sin(flightProgress * Math.PI) * 0.6;
 
-      viewer.camera.setView({
-        destination: Cesium.Cartesian3.fromDegrees(lon, lat, height),
-        orientation: {
-          heading: flightProgress * Math.PI * 0.5,
-          pitch: -Cesium.Math.PI_OVER_FOUR - Math.sin(flightProgress * Math.PI) * 0.3,
-          roll: 0
-        }
-      });
+      globeRenderer.setView(lon, lat, dist);
     } else {
-      // Orbiting a single location, advancing through its days
       state.currentPhase = 'orbit';
       state.locationIndex = locIndex;
       const clampedWithin = Math.min(within, orbitLen - 1);
       const dayIndex = Math.min(Math.floor(clampedWithin / framesPerDay), loc.days.length - 1);
       state.dayIndex = dayIndex;
       const day = loc.days[dayIndex];
-      const dayProgress = (clampedWithin % framesPerDay) / framesPerDay;
-      const angle = dayProgress * Math.PI * 2;
-      const height = 8000;
 
-      viewer.camera.setView({
-        destination: Cesium.Cartesian3.fromDegrees(
-          loc.lon + Math.sin(angle) * 0.02,
-          loc.lat + Math.cos(angle) * 0.015,
-          height
-        ),
-        orientation: {
-          heading: angle + Math.PI,
-          pitch: -Cesium.Math.PI_OVER_THREE,
-          roll: 0
-        }
-      });
+      // Continuous gentle wander across the whole location segment. The sin(t*PI)
+      // envelope returns to 0 at both ends, so the camera matches the flight
+      // path exactly at the orbit->flight and flight->orbit boundaries (no snap).
+      const t = clampedWithin / (orbitLen - 1);
+      const envelope = Math.sin(t * Math.PI);
+      const wanderLon = Math.sin(t * 5.0) * 4.0 * envelope;
+      const wanderLat = Math.cos(t * 3.0) * 3.0 * envelope;
 
-      // Refresh overlay + particles only when the day/location actually changes
+      globeRenderer.setView(
+        loc.lon + wanderLon,
+        loc.lat + wanderLat,
+        BASE_CAM_DIST
+      );
+
       const key = locIndex + ':' + dayIndex;
       if (key !== state._lastDayKey) {
         weatherOverlay.updateInfo(loc, day);
@@ -629,12 +670,11 @@ function updateCamera(dt) {
     }
   }
 
-  // Sync particle system camera orientation
   if (particleSystem) {
     particleSystem.update(
       dt,
       { x: 0, y: 0, z: 0 },
-      { x: viewer.camera.pitch, y: viewer.camera.heading, z: viewer.camera.roll }
+      { x: 0, y: 0, z: 0 }
     );
   }
 }
@@ -645,7 +685,7 @@ function animate() {
 
   updateCamera(dt);
   particleSystem.render();
-  viewer.scene.render();
+  globeRenderer.render();
 
   if (animationState.frame < animationState.totalFrames) {
     requestAnimationFrame(animate);
@@ -655,10 +695,8 @@ function animate() {
 }
 
 window.startAnimation = function(totalFrames) {
-  console.log('startAnimation called, weatherOverlay:', typeof window.weatherOverlay, 'particleSystem:', typeof window.particleSystem);
-  console.log('weatherOverlay value:', window.weatherOverlay);
-  if (!window.weatherOverlay || !window.particleSystem) {
-    throw new Error('startAnimation called before initCesium completed - weatherOverlay/particleSystem not initialized');
+  if (!window.weatherOverlay || !window.particleSystem || !window.globeRenderer) {
+    throw new Error('startAnimation called before initScene completed');
   }
   animationState.totalFrames = totalFrames;
   animationState.frame = 0;
@@ -675,4 +713,4 @@ window.startAnimation = function(totalFrames) {
   animate();
 };
 
-window.initCesium = initCesium;
+window.initScene = initScene;

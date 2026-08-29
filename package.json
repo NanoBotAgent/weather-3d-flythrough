@@ -1,7 +1,7 @@
 {
   "name": "weather-3d-flythrough",
   "version": "1.0.0",
-  "description": "3D weather flythrough with CesiumJS and three.js rain particles",
+  "description": "3D weather flythrough with a procedurally-textured globe and three.js rain particles",
   "main": "ci/render-frames.js",
   "scripts": {
     "render": "node ci/render-frames.js",
