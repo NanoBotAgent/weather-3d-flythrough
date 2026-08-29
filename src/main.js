@@ -531,6 +531,8 @@ class GlobeRenderer {
   }
 
   render() {
+    // Spin the globe continuously so the sphere reads as rotating 3D Earth.
+    this.globe.rotation.y += 0.008;
     this.renderer.render(this.scene, this.camera);
   }
 
@@ -644,28 +646,43 @@ function updateCamera(dt) {
       state.dayIndex = dayIndex;
       const day = loc.days[dayIndex];
 
-      // Continuous gentle wander across the whole location segment. The sin(t*PI)
-      // envelope returns to 0 at both ends, so the camera matches the flight
-      // path exactly at the orbit->flight and flight->orbit boundaries (no snap).
+      // Full 360° orbital flight around the location over the 7-day segment.
+      // t goes 0->1 across the orbit; camera circles at BASE_CAM_DIST.
       const t = clampedWithin / (orbitLen - 1);
-      const envelope = Math.sin(t * Math.PI);
-      const wanderLon = Math.sin(t * 5.0) * 4.0 * envelope;
-      const wanderLat = Math.cos(t * 3.0) * 3.0 * envelope;
+      const orbitAngle = t * Math.PI * 2;
+      const orbitRadius = 0.5; // offset from center
+      const camLon = loc.lon + Math.sin(orbitAngle) * orbitRadius;
+      const camLat = loc.lat + Math.cos(orbitAngle) * orbitRadius * 0.5;
+      const camDist = BASE_CAM_DIST + Math.sin(t * Math.PI) * 0.4;
 
-      globeRenderer.setView(
-        loc.lon + wanderLon,
-        loc.lat + wanderLat,
-        BASE_CAM_DIST
-      );
+      globeRenderer.setView(camLon, camLat, camDist);
 
       const key = locIndex + ':' + dayIndex;
       if (key !== state._lastDayKey) {
         weatherOverlay.updateInfo(loc, day);
         particleSystem.setCondition(day.condition, day.rain / 100);
-        if (day.condition.toLowerCase().includes('thunder') || day.condition.toLowerCase().includes('storm')) {
-          particleSystem.triggerLightning();
-        }
         state._lastDayKey = key;
+        state._thunderTimer = 0;
+      }
+
+      // Periodic lightning flashes during thunder/storm days (every ~0.7s).
+      if ((day.condition.toLowerCase().includes('thunder') || day.condition.toLowerCase().includes('storm'))) {
+        state._thunderTimer = (state._thunderTimer || 0) + dt;
+        if (!state._lightningOn && state._thunderTimer > 0.5) {
+          particleSystem.triggerLightning();
+          state._lightningOn = true;
+          state._lightningOffTimer = 0;
+        }
+        if (state._lightningOn) {
+          state._lightningOffTimer = (state._lightningOffTimer || 0) + dt;
+          if (state._lightningOffTimer > 0.2) {
+            state._lightningOn = false;
+            state._thunderTimer = 0;
+          }
+        }
+      } else {
+        state._thunderTimer = 0;
+        state._lightningOn = false;
       }
     }
   }
